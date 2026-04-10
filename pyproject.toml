@@ -1,0 +1,43 @@
+[project]
+name = "p2m-policy"
+version = "0.1.0"
+description = "YAML-driven safety evaluation pipeline with LiteLLM-backed stages"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "click>=8.0",
+  "litellm>=1.79.1",
+  "pydantic>=2.0",
+  "PyYAML>=6.0",
+  "rapidfuzz>=3.9.0",
+  "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+analysis = [
+  "matplotlib>=3.8.0",
+  "numpy>=2.0.0",
+  "openai>=1.30.0",
+  "openpyxl>=3.1.5",
+  "pandas>=2.2.0",
+  "seaborn>=0.13.0",
+  "sentence-transformers>=3.0.0",
+]
+
+[tool.uv]
+index-url = "https://pypi.org/simple"
+
+[project.scripts]
+p2m = "p2m.cli:cli"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.setuptools.packages.find]
+include = ["p2m*"]
