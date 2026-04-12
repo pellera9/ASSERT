@@ -33,7 +33,6 @@ pipeline:
   rollout:
     concurrency: 5
     target:
-      # NEW: callable target — p2m imports and calls this function
       callable: examples.travel_planner.approach_b_callable:target
     auditor:
       model:

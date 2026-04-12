@@ -3,7 +3,14 @@
 USER-SIDE CODE: Zero (just config — IF their graph matches the adapter's assumptions).
 P2M-SIDE CODE: Full adapter that knows about LangGraph internals.
 
-This file shows both the happy path AND the failure modes.
+This file shows both the happy path AND the failure modes. It demonstrates
+WHY the adapter approach is architecturally problematic — kept here as
+documentation of the anti-pattern.
+
+Line count comparison:
+  User writes ............. 0 lines (config only — but see KNOWN_ISSUES)
+  p2m must build .......... ~200 lines per framework adapter
+  p2m must maintain ....... N adapters × ongoing API changes = permanent burden
 """
 
 from __future__ import annotations
@@ -28,8 +35,8 @@ import importlib
 import json
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, BaseMessage, ToolMessage
-from p2m.core.session import ConnectorResponse, AdapterEvent
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from p2m.core.session import AdapterEvent, ConnectorResponse
 
 
 class Adapter:

@@ -34,7 +34,6 @@ pipeline:
   rollout:
     concurrency: 5
     target:
-      # NEW: callable target with OTel trace capture
       callable: examples.travel_planner.agent:chat_sync
       trace:
         backend: phoenix
