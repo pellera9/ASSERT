@@ -420,6 +420,15 @@ def _build_target_session(
     if target.is_callable:
         if not target.callable:
             raise ValueError("callable target requires a callable reference")
+        if target.trace:
+            from p2m.core.otel_session import OTelTracedSession
+
+            return OTelTracedSession(
+                callable_ref=target.callable,
+                system_prompt=target.system_prompt,
+                message_timeout_s=rollout.tool_timeout_s,
+                group_by=target.trace.group_by,
+            )
         return CallableSession(
             callable_ref=target.callable,
             system_prompt=target.system_prompt,

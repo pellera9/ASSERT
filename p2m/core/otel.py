@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 
 # OpenInference semantic conventions
@@ -247,3 +247,165 @@ def _spans_to_events(
     }
 
     return events, aggregate
+
+
+# ── Span validation ───────────────────────────────────────────────
+
+
+@dataclass
+class SpanValidationResult:
+    """Result of validating spans for eval readiness."""
+
+    valid: bool
+    missing_attributes: list[str]
+    warnings: list[str]
+
+
+def validate_spans(spans: list[OTelSpan]) -> SpanValidationResult:
+    """Check spans have required OpenInference attributes for quality eval.
+
+    Required: ``openinference.span.kind``, ``output.value`` (for LLM spans).
+    Recommended: ``llm.model_name``, ``llm.token_count.*``, ``tool.name``
+    (for TOOL spans).
+    """
+    missing: list[str] = []
+    warnings: list[str] = []
+
+    for span in spans:
+        if span.kind == "UNKNOWN":
+            missing.append(f"span {span.span_id}: {_SPAN_KIND_KEY}")
+
+        if span.kind == "LLM":
+            if not span.attributes.get(_OUTPUT_VALUE_KEY):
+                missing.append(f"span {span.span_id}: {_OUTPUT_VALUE_KEY}")
+            if not span.attributes.get(_LLM_MODEL_KEY):
+                warnings.append(f"span {span.span_id}: missing recommended {_LLM_MODEL_KEY}")
+            if (
+                not span.attributes.get(_LLM_INPUT_TOKENS_KEY)
+                and not span.attributes.get(_LLM_OUTPUT_TOKENS_KEY)
+            ):
+                warnings.append(f"span {span.span_id}: missing recommended token counts")
+
+        if span.kind == "TOOL":
+            if not span.attributes.get(_TOOL_NAME_KEY):
+                warnings.append(f"span {span.span_id}: missing recommended {_TOOL_NAME_KEY}")
+
+    return SpanValidationResult(
+        valid=len(missing) == 0,
+        missing_attributes=missing,
+        warnings=warnings,
+    )
+
+
+# ── Trace compression ────────────────────────────────────────────
+
+
+def compress_trace_for_judge(
+    events: list[dict[str, Any]],
+    *,
+    max_events: int = 50,
+    include_tool_args: bool = True,
+    include_token_counts: bool = True,
+) -> list[dict[str, Any]]:
+    """Compress a trace to fit within judge token budget.
+
+    Strategy: Keep all tool call events (they're evidence), keep first and
+    last LLM events per node, drop intermediate LLM events if over budget.
+    """
+    if len(events) <= max_events:
+        result = events
+    else:
+        # Partition: tool events are always kept; LLM events may be trimmed
+        tool_events = [e for e in events if e.get("actor") == "tool"]
+        llm_events = [e for e in events if e.get("actor") != "tool"]
+
+        remaining = max_events - len(tool_events)
+        if remaining < 0:
+            remaining = 0
+
+        if remaining >= len(llm_events):
+            trimmed_llm = llm_events
+        else:
+            # Keep first and last LLM event per node, drop middle ones
+            by_node: dict[str, list[dict[str, Any]]] = {}
+            for ev in llm_events:
+                node = (ev.get("raw") or {}).get("_node", "_default")
+                by_node.setdefault(node, []).append(ev)
+
+            trimmed_llm = []
+            for node_events in by_node.values():
+                if len(node_events) <= 2:
+                    trimmed_llm.extend(node_events)
+                else:
+                    trimmed_llm.append(node_events[0])
+                    trimmed_llm.append(node_events[-1])
+
+            # If still over budget, hard-truncate
+            if len(trimmed_llm) > remaining:
+                trimmed_llm = trimmed_llm[:remaining]
+
+        result = tool_events + trimmed_llm
+
+    # Optionally strip tool args or token counts to save tokens
+    if not include_tool_args or not include_token_counts:
+        compressed = []
+        for event in result:
+            event = dict(event)
+            if not include_tool_args and event.get("actor") == "tool":
+                edit = dict(event.get("edit", {}))
+                edit.pop("tool_args", None)
+                event["edit"] = edit
+            if not include_token_counts and "raw" in event:
+                raw = dict(event["raw"])
+                raw.pop("_tokens", None)
+                event["raw"] = raw
+            compressed.append(event)
+        return compressed
+
+    return result
+
+
+# ── Trace exporters ──────────────────────────────────────────────
+
+
+@runtime_checkable
+class TraceExporter(Protocol):
+    """Interface for exporting OTel traces. Decouples from Phoenix."""
+
+    def export_session(self, session_id: str) -> list[OTelSpan]: ...
+
+
+class FileTraceExporter:
+    """Reads OTLP JSON from file. No external dependencies."""
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+
+    def export_session(self, session_id: str) -> list[OTelSpan]:
+        """Return spans whose ``session.id`` attribute matches *session_id*.
+
+        Falls back to matching on ``trace_id`` when no ``session.id``
+        attribute is present.
+        """
+        all_spans = _parse_otlp_json(self._path)
+        return [
+            s for s in all_spans
+            if s.attributes.get("session.id", s.trace_id) == session_id
+        ]
+
+
+class InMemoryTraceExporter:
+    """Collects spans in-memory during a rollout. For testing and CI."""
+
+    def __init__(self) -> None:
+        self._spans: list[OTelSpan] = []
+
+    def add_span(self, span: OTelSpan) -> None:
+        self._spans.append(span)
+
+    def export_session(self, session_id: str) -> list[OTelSpan]:
+        """Return spans whose ``session.id`` attribute or trace_id matches."""
+        return [
+            s for s in self._spans
+            if s.attributes.get("session.id", s.trace_id) == session_id
+        ]
