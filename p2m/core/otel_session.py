@@ -23,6 +23,7 @@ import uuid
 from typing import Any
 
 from p2m.core.async_utils import invoke_callable
+from p2m.core.collector import SpanCollector
 from p2m.core.model_client import Message
 from p2m.core.otel import (
     InMemoryTraceExporter,
@@ -53,6 +54,11 @@ class OTelTracedSession:
 
         The judge receives the FULL conversation history with per-turn
         trace metadata — every node visited, tool called, and LLM invocation.
+
+    The ``collector`` parameter accepts any :class:`SpanCollector` — the
+    preferred, Protocol-based interface.  ``exporter`` (the older
+    :class:`TraceExporter` interface) is still supported for backward
+    compatibility.
     """
 
     def __init__(
@@ -60,12 +66,14 @@ class OTelTracedSession:
         *,
         callable_ref: str,
         exporter: TraceExporter | None = None,
+        collector: SpanCollector | None = None,
         group_by: str = "session.id",
         system_prompt: str | None = None,
         message_timeout_s: float | None = None,
         max_events_per_turn: int = 50,
     ) -> None:
         self._callable_ref = callable_ref
+        self._collector = collector
         self._exporter = exporter or InMemoryTraceExporter()
         self._group_by = group_by
         self._system_prompt = system_prompt

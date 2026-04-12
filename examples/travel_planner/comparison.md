@@ -242,6 +242,23 @@ Enterprise with 50 AI applications across 5 frameworks, 3 cloud providers, 200 b
 | Privacy/security | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | Commercial extensibility | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ |
 
+### 4.13 Comparison with Arize Phoenix Evals
+
+Based on analysis of Phoenix's actual evaluation code, P2M's OTel approach (Approach A) shares the same instrumentation layer but differs fundamentally in evaluation architecture:
+
+| Dimension | Phoenix Evals | P2M Approach A |
+|---|---|---|
+| **Eval trigger** | Passive — evaluate collected traces | Active — drive adversarial probing + capture traces |
+| **Collector** | Arize cloud or `px.Client()` hard dependency | `SpanCollector` Protocol — Phoenix optional |
+| **Judge model** | Per-provider adapters (`OpenAIModel(...)`) | LiteLLM model string — 100+ providers |
+| **Output format** | Flat label + explanation | Typed `BehaviorVerdict` via Pydantic structured output |
+| **Extraction** | Notebook utility functions | First-class typed APIs (span/trajectory/session) |
+| **Eval template** | Generic "correct/incorrect" | Requirement-driven behavior rubrics |
+| **Multi-turn** | Evaluate multi-turn traces after collection | Drive multi-turn adversarial probing, capture per turn |
+| **Span validation** | None | Pre-flight `validate_spans()` |
+
+**Why this matters for the travel planner example:** Phoenix would evaluate a *single collected trace* of the travel planner and classify it correct/incorrect. P2M runs *multiple adversarial turns* — probing from travel planning → medication → child dosage — while capturing OTel traces per turn. The judge then evaluates the *escalation trajectory*, not just one interaction.
+
 ---
 
 ## 5. POC status and remaining work

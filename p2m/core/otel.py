@@ -409,3 +409,163 @@ class InMemoryTraceExporter:
             s for s in self._spans
             if s.attributes.get("session.id", s.trace_id) == session_id
         ]
+
+
+# ── Extraction APIs (3 granularities) ─────────────────────────────
+# These productize Arize's notebook utility functions as typed, tested APIs.
+
+
+def extract_span_inputs(
+    spans: list[OTelSpan],
+    *,
+    span_kind: str = "LLM",
+) -> list[dict[str, Any]]:
+    """Extract eval inputs from individual spans.
+
+    Returns one dict per matching span with:
+    - query: the input to this span
+    - response: the output from this span
+    - model: the LLM model used (if available)
+    - tokens: input/output token counts (if available)
+    """
+    results = []
+    for span in spans:
+        if span.kind != span_kind:
+            continue
+        results.append({
+            "span_id": span.span_id,
+            "trace_id": span.trace_id,
+            "query": span.attributes.get(_INPUT_VALUE_KEY, ""),
+            "response": span.attributes.get(_OUTPUT_VALUE_KEY, ""),
+            "model": span.attributes.get(_LLM_MODEL_KEY, ""),
+            "input_tokens": span.attributes.get(_LLM_INPUT_TOKENS_KEY, 0),
+            "output_tokens": span.attributes.get(_LLM_OUTPUT_TOKENS_KEY, 0),
+            "latency_ms": span.latency_ms,
+            "node": span.attributes.get(_LANGGRAPH_NODE_KEY, span.name),
+        })
+    return results
+
+
+def extract_trajectory_inputs(
+    spans: list[OTelSpan],
+    *,
+    group_by: str = "trace_id",
+) -> list[dict[str, Any]]:
+    """Extract trajectory eval inputs — one row per trace.
+
+    Groups spans by trace, extracts tool calls in order, collapses
+    to the format needed for trajectory evaluation prompts.
+
+    Returns one dict per trace with:
+    - trace_id: the trace identifier
+    - user_input: the first user input in the trace
+    - tool_calls: ordered list of {name, arguments} dicts
+    - tool_defs: tool definitions (if available)
+    - node_path: ordered list of node names visited
+    - total_tokens: aggregate token usage
+    """
+    if group_by == "trace_id":
+        grouped = _group_spans_by_trace(spans)
+    else:
+        grouped = _group_spans(spans, group_by)
+
+    results = []
+    for group_id, group_spans in grouped.items():
+        group_spans.sort(key=lambda s: s.start_time_ns)
+
+        user_input = ""
+        tool_calls: list[dict[str, Any]] = []
+        tool_defs: list[Any] = []
+        node_path: list[str] = []
+        total_input_tokens = 0
+        total_output_tokens = 0
+
+        for span in group_spans:
+            if span.kind == "LLM":
+                if not user_input:
+                    user_input = span.attributes.get(_INPUT_VALUE_KEY, "")
+                node = span.attributes.get(_LANGGRAPH_NODE_KEY, span.name)
+                if node and node not in node_path:
+                    node_path.append(node)
+                total_input_tokens += span.attributes.get(_LLM_INPUT_TOKENS_KEY, 0)
+                total_output_tokens += span.attributes.get(_LLM_OUTPUT_TOKENS_KEY, 0)
+            elif span.kind == "TOOL":
+                tool_name = span.attributes.get(_TOOL_NAME_KEY, span.name)
+                tool_input = span.attributes.get(_INPUT_VALUE_KEY, "")
+                try:
+                    args = json.loads(tool_input) if tool_input else {}
+                except (json.JSONDecodeError, TypeError):
+                    args = {"raw": tool_input}
+                tool_calls.append({"name": tool_name, "arguments": args})
+
+        results.append({
+            "trace_id": group_id,
+            "user_input": user_input,
+            "tool_calls": json.dumps(tool_calls),
+            "tool_defs": json.dumps(tool_defs),
+            "node_path": json.dumps(node_path),
+            "total_tokens": {"input": total_input_tokens, "output": total_output_tokens},
+        })
+
+    return results
+
+
+def extract_session_inputs(
+    spans: list[OTelSpan],
+    *,
+    session_id_key: str = "session.id",
+) -> list[dict[str, Any]]:
+    """Extract session eval inputs — one row per session.
+
+    Groups spans by session ID, orders traces chronologically,
+    extracts user inputs and outputs across the session.
+
+    Returns one dict per session with:
+    - session_id: the session identifier
+    - user_inputs: chronological list of user inputs
+    - output_messages: chronological list of agent outputs
+    - trace_count: number of traces in the session
+    - tool_calls: all tool calls across the session
+    """
+    grouped = _group_spans(spans, session_id_key)
+
+    results = []
+    for session_id, session_spans in grouped.items():
+        session_spans.sort(key=lambda s: s.start_time_ns)
+
+        user_inputs: list[str] = []
+        output_messages: list[str] = []
+        tool_calls: list[str] = []
+        trace_ids: set[str] = set()
+
+        for span in session_spans:
+            trace_ids.add(span.trace_id)
+            if span.kind == "LLM":
+                inp = span.attributes.get(_INPUT_VALUE_KEY, "")
+                out = span.attributes.get(_OUTPUT_VALUE_KEY, "")
+                if inp and inp not in user_inputs:
+                    user_inputs.append(inp)
+                if out:
+                    output_messages.append(out)
+            elif span.kind == "TOOL":
+                tool_name = span.attributes.get(_TOOL_NAME_KEY, span.name)
+                tool_input = span.attributes.get(_INPUT_VALUE_KEY, "")
+                tool_calls.append(f"{tool_name}({tool_input})")
+
+        results.append({
+            "session_id": session_id,
+            "user_inputs": json.dumps(user_inputs),
+            "output_messages": json.dumps(output_messages),
+            "trace_count": len(trace_ids),
+            "tool_calls": json.dumps(tool_calls),
+        })
+
+    return results
+
+
+def _group_spans_by_trace(spans: list[OTelSpan]) -> dict[str, list[OTelSpan]]:
+    """Group spans by trace_id."""
+    groups: dict[str, list[OTelSpan]] = {}
+    for span in spans:
+        groups.setdefault(span.trace_id, []).append(span)
+    return groups

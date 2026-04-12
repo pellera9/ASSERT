@@ -728,3 +728,388 @@ class TestRolloutOTelWiring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── SpanCollector Protocol tests ─────────────────────────────────
+
+
+class TestSpanCollectorProtocol(unittest.TestCase):
+    """Validates the SpanCollector Protocol and implementations."""
+
+    def test_dataframe_collector_satisfies_protocol(self):
+        from p2m.core.collector import DataFrameCollector, SpanCollector
+
+        class FakeDF:
+            columns = ["a", "b"]
+
+        collector = DataFrameCollector(FakeDF())
+        self.assertIsInstance(collector, SpanCollector)
+
+    def test_dataframe_collector_get_spans(self):
+        from p2m.core.collector import DataFrameCollector
+
+        sentinel = object()
+        collector = DataFrameCollector(sentinel)
+        self.assertIs(collector.get_spans("project"), sentinel)
+        self.assertIs(collector.get_spans(), sentinel)
+
+    def test_dataframe_collector_validate_missing_columns(self):
+        from p2m.core.collector import DataFrameCollector, REQUIRED_COLUMNS
+
+        class FakeDF:
+            columns = ["context.trace_id", "name"]
+
+        collector = DataFrameCollector(FakeDF())
+        warnings = collector.validate(FakeDF())
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Missing required columns", warnings[0])
+
+    def test_dataframe_collector_validate_all_present(self):
+        from p2m.core.collector import DataFrameCollector, REQUIRED_COLUMNS
+
+        class FakeDF:
+            columns = list(REQUIRED_COLUMNS)
+
+        collector = DataFrameCollector(FakeDF())
+        warnings = collector.validate(FakeDF())
+        self.assertEqual(warnings, [])
+
+    def test_dataframe_collector_validate_non_dataframe(self):
+        from p2m.core.collector import DataFrameCollector
+
+        collector = DataFrameCollector("not a df")
+        warnings = collector.validate("not a df")
+        self.assertEqual(warnings, [])  # no columns attr → no check
+
+    def test_phoenix_collector_import_error(self):
+        from p2m.core.collector import PhoenixCollector
+
+        with self.assertRaises(ImportError) as ctx:
+            PhoenixCollector()
+        self.assertIn("arize-phoenix", str(ctx.exception))
+
+    def test_custom_collector_satisfies_protocol(self):
+        """A plain class with get_spans/validate should satisfy SpanCollector."""
+        from p2m.core.collector import SpanCollector
+
+        class MyCollector:
+            def get_spans(self, project_name, **kw):
+                return []
+
+            def validate(self, spans):
+                return []
+
+        self.assertIsInstance(MyCollector(), SpanCollector)
+
+
+# ── Extraction API tests ─────────────────────────────────────────
+
+
+class TestExtractSpanInputs(unittest.TestCase):
+    """Validates extract_span_inputs returns correct structure."""
+
+    def _make_span(self, **overrides):
+        from p2m.core.otel import OTelSpan
+
+        defaults = dict(
+            trace_id="t1",
+            span_id="s1",
+            parent_span_id=None,
+            name="llm_call",
+            kind="LLM",
+            start_time_ns=0,
+            end_time_ns=2_000_000,
+            attributes={
+                "input.value": "hello",
+                "output.value": "world",
+                "llm.model_name": "gpt-4o",
+                "llm.token_count.prompt": 10,
+                "llm.token_count.completion": 5,
+                "langgraph.node": "agent",
+            },
+        )
+        defaults.update(overrides)
+        return OTelSpan(**defaults)
+
+    def test_basic_extraction(self):
+        from p2m.core.otel import extract_span_inputs
+
+        spans = [self._make_span()]
+        result = extract_span_inputs(spans)
+        self.assertEqual(len(result), 1)
+        row = result[0]
+        self.assertEqual(row["query"], "hello")
+        self.assertEqual(row["response"], "world")
+        self.assertEqual(row["model"], "gpt-4o")
+        self.assertEqual(row["input_tokens"], 10)
+        self.assertEqual(row["output_tokens"], 5)
+        self.assertEqual(row["node"], "agent")
+        self.assertAlmostEqual(row["latency_ms"], 2.0)
+
+    def test_filters_by_kind(self):
+        from p2m.core.otel import extract_span_inputs
+
+        spans = [
+            self._make_span(kind="LLM", span_id="s1"),
+            self._make_span(kind="TOOL", span_id="s2"),
+            self._make_span(kind="CHAIN", span_id="s3"),
+        ]
+        result = extract_span_inputs(spans)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["span_id"], "s1")
+
+    def test_custom_span_kind_filter(self):
+        from p2m.core.otel import extract_span_inputs
+
+        spans = [
+            self._make_span(kind="TOOL", span_id="s1"),
+        ]
+        result = extract_span_inputs(spans, span_kind="TOOL")
+        self.assertEqual(len(result), 1)
+
+    def test_empty_spans(self):
+        from p2m.core.otel import extract_span_inputs
+
+        result = extract_span_inputs([])
+        self.assertEqual(result, [])
+
+
+class TestExtractTrajectoryInputs(unittest.TestCase):
+    """Validates extract_trajectory_inputs groups by trace correctly."""
+
+    def _make_span(self, **overrides):
+        from p2m.core.otel import OTelSpan
+
+        defaults = dict(
+            trace_id="t1",
+            span_id="s1",
+            parent_span_id=None,
+            name="span",
+            kind="LLM",
+            start_time_ns=0,
+            end_time_ns=1_000_000,
+            attributes={},
+        )
+        defaults.update(overrides)
+        return OTelSpan(**defaults)
+
+    def test_groups_by_trace(self):
+        from p2m.core.otel import extract_trajectory_inputs
+
+        spans = [
+            self._make_span(
+                trace_id="t1",
+                span_id="s1",
+                kind="LLM",
+                start_time_ns=0,
+                attributes={"input.value": "q1"},
+            ),
+            self._make_span(
+                trace_id="t1",
+                span_id="s2",
+                kind="TOOL",
+                start_time_ns=1_000,
+                attributes={
+                    "tool.name": "search",
+                    "input.value": '{"q": "test"}',
+                },
+            ),
+            self._make_span(
+                trace_id="t2",
+                span_id="s3",
+                kind="LLM",
+                start_time_ns=0,
+                attributes={"input.value": "q2"},
+            ),
+        ]
+        result = extract_trajectory_inputs(spans)
+        self.assertEqual(len(result), 2)
+
+        t1_row = next(r for r in result if r["trace_id"] == "t1")
+        self.assertEqual(t1_row["user_input"], "q1")
+        tool_calls = json.loads(t1_row["tool_calls"])
+        self.assertEqual(len(tool_calls), 1)
+        self.assertEqual(tool_calls[0]["name"], "search")
+
+    def test_node_path_captured(self):
+        from p2m.core.otel import extract_trajectory_inputs
+
+        spans = [
+            self._make_span(
+                trace_id="t1",
+                span_id="s1",
+                kind="LLM",
+                start_time_ns=0,
+                attributes={"langgraph.node": "planner"},
+            ),
+            self._make_span(
+                trace_id="t1",
+                span_id="s2",
+                kind="LLM",
+                start_time_ns=1000,
+                attributes={"langgraph.node": "executor"},
+            ),
+        ]
+        result = extract_trajectory_inputs(spans)
+        node_path = json.loads(result[0]["node_path"])
+        self.assertEqual(node_path, ["planner", "executor"])
+
+    def test_token_aggregation(self):
+        from p2m.core.otel import extract_trajectory_inputs
+
+        spans = [
+            self._make_span(
+                trace_id="t1",
+                span_id="s1",
+                kind="LLM",
+                attributes={
+                    "llm.token_count.prompt": 50,
+                    "llm.token_count.completion": 25,
+                },
+            ),
+            self._make_span(
+                trace_id="t1",
+                span_id="s2",
+                kind="LLM",
+                start_time_ns=1000,
+                attributes={
+                    "llm.token_count.prompt": 100,
+                    "llm.token_count.completion": 50,
+                },
+            ),
+        ]
+        result = extract_trajectory_inputs(spans)
+        self.assertEqual(result[0]["total_tokens"]["input"], 150)
+        self.assertEqual(result[0]["total_tokens"]["output"], 75)
+
+    def test_empty_spans(self):
+        from p2m.core.otel import extract_trajectory_inputs
+
+        result = extract_trajectory_inputs([])
+        self.assertEqual(result, [])
+
+
+class TestExtractSessionInputs(unittest.TestCase):
+    """Validates extract_session_inputs groups by session correctly."""
+
+    def _make_span(self, **overrides):
+        from p2m.core.otel import OTelSpan
+
+        defaults = dict(
+            trace_id="t1",
+            span_id="s1",
+            parent_span_id=None,
+            name="span",
+            kind="LLM",
+            start_time_ns=0,
+            end_time_ns=1_000_000,
+            attributes={},
+        )
+        defaults.update(overrides)
+        return OTelSpan(**defaults)
+
+    def test_groups_by_session(self):
+        from p2m.core.otel import extract_session_inputs
+
+        spans = [
+            self._make_span(
+                trace_id="t1",
+                span_id="s1",
+                kind="LLM",
+                attributes={
+                    "session.id": "sess_A",
+                    "input.value": "hello",
+                    "output.value": "hi there",
+                },
+            ),
+            self._make_span(
+                trace_id="t2",
+                span_id="s2",
+                kind="LLM",
+                start_time_ns=1000,
+                attributes={
+                    "session.id": "sess_A",
+                    "input.value": "follow-up",
+                    "output.value": "sure",
+                },
+            ),
+            self._make_span(
+                trace_id="t3",
+                span_id="s3",
+                kind="LLM",
+                attributes={
+                    "session.id": "sess_B",
+                    "input.value": "other",
+                    "output.value": "resp",
+                },
+            ),
+        ]
+        result = extract_session_inputs(spans)
+        self.assertEqual(len(result), 2)
+
+        sess_a = next(r for r in result if r["session_id"] == "sess_A")
+        self.assertEqual(sess_a["trace_count"], 2)
+        user_inputs = json.loads(sess_a["user_inputs"])
+        self.assertEqual(user_inputs, ["hello", "follow-up"])
+        outputs = json.loads(sess_a["output_messages"])
+        self.assertEqual(outputs, ["hi there", "sure"])
+
+    def test_tool_calls_collected(self):
+        from p2m.core.otel import extract_session_inputs
+
+        spans = [
+            self._make_span(
+                trace_id="t1",
+                span_id="s1",
+                kind="TOOL",
+                attributes={
+                    "session.id": "sess_A",
+                    "tool.name": "search",
+                    "input.value": "query",
+                },
+            ),
+        ]
+        result = extract_session_inputs(spans)
+        tool_calls = json.loads(result[0]["tool_calls"])
+        self.assertEqual(len(tool_calls), 1)
+        self.assertIn("search(query)", tool_calls)
+
+    def test_empty_spans(self):
+        from p2m.core.otel import extract_session_inputs
+
+        result = extract_session_inputs([])
+        self.assertEqual(result, [])
+
+
+# ── OTelTracedSession collector param test ───────────────────────
+
+
+class TestOTelTracedSessionCollector(unittest.TestCase):
+    """Validates OTelTracedSession accepts SpanCollector."""
+
+    def test_accepts_collector_kwarg(self):
+        from p2m.core.otel_session import OTelTracedSession
+
+        class FakeCollector:
+            def get_spans(self, project_name, **kw):
+                return []
+
+            def validate(self, spans):
+                return []
+
+        session = OTelTracedSession(
+            callable_ref="some.module:fn",
+            collector=FakeCollector(),
+        )
+        self.assertEqual(session.runtime_mode, "otel_traced")
+
+    def test_backward_compat_exporter_still_works(self):
+        """Passing exporter= still works as before."""
+        from p2m.core.otel_session import OTelTracedSession
+        from p2m.core.otel import InMemoryTraceExporter
+
+        session = OTelTracedSession(
+            callable_ref="some.module:fn",
+            exporter=InMemoryTraceExporter(),
+        )
+        self.assertEqual(session.runtime_mode, "otel_traced")
