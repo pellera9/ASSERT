@@ -6,6 +6,30 @@
 
 ---
 
+## Table of Contents
+
+- [Summary](#summary)
+- [1. What the developer writes](#1-what-the-developer-writes)
+- [2. What adaptive eval builds and maintains](#2-what-adaptive-eval-builds-and-maintains)
+- [3. What the judge sees](#3-what-the-judge-sees--transcript-comparison)
+- [4. Summary scorecard](#4-summary-scorecard)
+- [5. POC status](#5-poc-status-and-remaining-work)
+- [6. What happens when the agent grows](#6-what-happens-when-the-agent-grows)
+- [7. Verdict](#7-verdict)
+- [Appendix A: Detailed dimension-by-dimension comparison](#appendix-a-detailed-dimension-by-dimension-comparison)
+- [Appendix B: Comparison with Arize Phoenix Evals](#appendix-b-comparison-with-arize-phoenix-evals)
+
+## Summary
+
+| | A: OTel Trace-First | B: Callable Wrapper | C: Framework Adapter |
+|---|---|---|---|
+| **What the user writes** | 2 lines + pip install | 3-line function | YAML config only |
+| **What the judge sees** | Full internal trace (8/8 behaviors) | Input/output only (1/8) | Same as B (1/8) |
+| **Framework coverage** | 20+ via OpenInference | Universal (any callable) | 1 per adapter |
+| **Adaptive eval maintenance** | ~430 LOC, stable | ~80 LOC, zero maintenance | ~250 LOC per framework, ongoing |
+| **Enterprise readiness** | Compliance, audit trail, commercial backends | Quick start, any agent | Not recommended |
+| **Recommendation** | **Strategic differentiator (P1)** | **Ship now (P0)** | **Deprioritize** |
+
 ## 1. What the developer writes
 
 ### Approach A — OTel auto-instrumentation
@@ -18,7 +42,7 @@ register(auto_instrument=True)
 
 **Lines of user code: 2** (+ 1 pip install)
 **Agent code changes: 0**
-**Multi-turn support: Full** — P2M's auditor drives the conversation; OTel captures each turn's internals
+**Multi-turn support: Full** — Adaptive Eval's auditor drives the conversation; OTel captures each turn's internals
 
 ### Approach B — Callable wrapper
 
@@ -31,7 +55,7 @@ def target(message: str) -> str:
 
 **Lines of user code: 3**
 **Agent code changes: 0**
-**Multi-turn support: Full** — P2M drives conversation, but sees only input/output per turn
+**Multi-turn support: Full** — Adaptive Eval drives conversation, but sees only input/output per turn
 
 ### Approach C — Framework adapter
 
@@ -46,11 +70,11 @@ target:
 
 ---
 
-## 2. What p2m builds and maintains
+## 2. What adaptive eval builds and maintains
 
 | | A (OTel) | B (Callable) | C (Adapter) |
 |---|---|---|---|
-| **New p2m code** | `otel.py` (250 LOC) + `otel_session.py` (~180 LOC) | `CallableSession` (~80 LOC) | `p2m/adapters/langchain.py` (~250 LOC) |
+| **New adaptive eval code** | `otel.py` (250 LOC) + `otel_session.py` (~180 LOC) | `CallableSession` (~80 LOC) | `p2m/adapters/langchain.py` (~250 LOC) |
 | **Config additions** | `target.callable` + `target.trace` | `target.callable` | None (uses `target.connector`) |
 | **External dependencies** | None required (OpenInference spec as contract) | None | `langchain-core`, `langgraph` |
 | **Maintenance surface** | OTLP JSON format (stable OTel spec) | Python import + invoke (stable) | LangGraph API surface (pre-1.0, unstable) |
@@ -102,130 +126,7 @@ Identical visibility to Approach B. The adapter adds complexity but zero additio
 
 ---
 
-## 4. Comprehensive evaluation — 12 dimensions
-
-### 4.1 Ease of Use
-
-| Metric | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **Lines of user code** | 2 + pip install | 3 | 0 (config only) |
-| **Time to first eval** | ~7 min | ~5 min | ~3 min (happy) / ~30 min (debug) |
-| **Documentation needed** | OpenInference concept | Function signature | Adapter API + graph schema |
-| **Debugging effort** | Low (traces visible in Phoenix UI) | Low (simple wrapper) | High (schema mismatch) |
-| **Learning curve** | Moderate (OTel concepts) | Minimal | Low initially, steep at failure |
-
-### 4.2 Time to Value
-
-| Scenario | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **First eval run** | 7 min | 5 min | 3 min (if adapter matches) |
-| **Second framework** | 2 min (pip install new instrumentor) | 3 min (new wrapper) | 20+ min (new adapter or rewrite) |
-| **Production deployment** | 0 min (reuse existing OTel) | 3 min (deploy wrapper) | N/A (adapters are dev-only) |
-| **Iteration after failure** | 0 min (re-run, traces auto-collected) | 0 min (re-run) | 10+ min (debug adapter state) |
-
-### 4.3 Scalability — Less Battle-Tested Frameworks (CrewAI, AutoGen, Mastra)
-
-| Dimension | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **CrewAI support** | ✅ `pip install openinference-instrumentation-crewai` | ✅ Wrap `crew.kickoff()` | ❌ Would need new adapter |
-| **AutoGen support** | ✅ OpenInference package available | ✅ Wrap agent callable | ❌ Would need new adapter |
-| **Mastra (TypeScript)** | ⚠️ OTel works cross-language | ⚠️ Need HTTP bridge | ❌ Python-only adapters |
-| **Framework API breaks** | Nothing breaks — instrumentor is separate | Nothing breaks — wrapper is 3 lines | **Adapter breaks** |
-| **Quality of traces** | Varies — CrewAI instrumentor less mature than LangChain | Consistent (always black-box) | N/A |
-| **Risk for p2m team** | Zero — OpenInference team maintains instrumentors | Zero — developer owns wrapper | **Per-framework maintenance** |
-
-### 4.4 Scalability — Custom/Proprietary Agents (Mixed Public + Private)
-
-Enterprise agents commonly mix frameworks: LangGraph orchestration → proprietary retrieval service → MCP tool server → custom guardrails layer.
-
-| Dimension | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **Mixed-framework agents** | ✅ OTel context propagation across services | ✅ Black-box at system boundary | ❌ Adapter sees one framework only |
-| **Proprietary components** | ✅ Manual `@tracer` spans (~10 LOC per component) | ✅ Entire system is one callable | ❌ Cannot adapter proprietary code |
-| **Multi-service agents** | ⚠️ Requires `traceparent` header propagation | ✅ Single entry point | ❌ Single-process only |
-| **Private/air-gapped** | ✅ File-based trace export (no Phoenix dependency) | ✅ No dependencies | ❌ May need external packages |
-
-### 4.5 Maintainability for Adaptive Eval Team
-
-| Cost | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **Code to maintain** | ~430 LOC (otel.py + otel_session.py) | ~80 LOC (CallableSession) | ~250 LOC **per framework** |
-| **When LangGraph v1.0 ships** | Nothing changes | Nothing changes | **Rewrite adapter** |
-| **When CrewAI changes API** | Nothing changes | Nothing changes | **Rewrite adapter** |
-| **When new framework appears** | Nothing (works if it has OTel instrumentor) | Nothing (user writes wrapper) | **Write new adapter** |
-| **Annual maintenance estimate** | ~1-2 days (OTLP spec is stable) | ~0 days | ~2-4 weeks across frameworks |
-| **Dependency risk** | Low (OpenInference spec, not Phoenix API) | Zero | High (per-framework coupling) |
-
-### 4.6 Integration Complexity — Multi-Provider / Multi-Framework
-
-Enterprise scenario: LangGraph agent using OpenAI for planning, Anthropic for safety checks, Google for embeddings, MCP for tools.
-
-| Dimension | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **Multi-LLM tracing** | ✅ Each provider's spans captured separately | ❌ Only sees final output | ❌ Only sees final output |
-| **Tool call attribution** | ✅ Which tool, which model, which latency | ❌ Invisible | ❌ Invisible |
-| **Cost attribution** | ✅ Token counts per model per turn | ❌ Cannot measure | ❌ Cannot measure |
-| **Cross-provider issues** | ✅ Visible (e.g., Anthropic safety check blocked the response) | ❌ Silent | ❌ Silent |
-
-### 4.7 Cost and Latency
-
-| Factor | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **Instrumentation overhead** | ~2-5% latency (OTel span creation) | 0% | 0% |
-| **Trace storage** | ~1-10KB per turn (OTLP JSON) | 0 | 0 |
-| **Judge token cost per turn** | Higher — richer context (~2-5K tokens) | Lower — input/output only (~500 tokens) | Same as B |
-| **Judge quality per token** | **Much higher** — evidence-backed verdicts | Lower — can only assess final text | Same as B |
-| **Total eval cost (100 seeds)** | ~$3-8 (more tokens, better verdicts) | ~$1-3 (fewer tokens, surface-level) | ~$1-3 (if it works) |
-| **Trace compression** | ✅ Built-in (`compress_trace_for_judge`) | N/A | N/A |
-
-### 4.8 Enterprise Concerns — Privacy and Security
-
-| Concern | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **Data residency** | ✅ Traces stay local (file export, no cloud) | ✅ No data leaves process | ✅ No data leaves process |
-| **PII in traces** | ⚠️ Spans may contain user data — need scrubbing | ⚠️ Same risk in I/O | Same as B |
-| **Credential exposure** | ⚠️ Tool args may contain API keys | ❌ Not visible | ❌ Not visible |
-| **Audit trail** | ✅ Full execution audit per conversation | Partial (I/O only) | Partial |
-| **Air-gapped environments** | ✅ File-based trace export, no internet needed | ✅ No internet needed | ✅ No internet needed |
-| **Compliance (SOC2, HIPAA)** | ✅ Provable evidence of agent behavior | Partial evidence | Partial evidence |
-
-### 4.9 Extensibility to Commercial Tracing Services
-
-| Service | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **Datadog APM** | ✅ OTel exporter → Datadog | ❌ No integration | ❌ No integration |
-| **Honeycomb** | ✅ OTel exporter → Honeycomb | ❌ | ❌ |
-| **Arize Phoenix Cloud** | ✅ Native | ❌ | ❌ |
-| **Azure Monitor** | ✅ OTel exporter → App Insights | ❌ | ❌ |
-| **Custom backends** | ✅ Any OTLP-compatible collector | ❌ | ❌ |
-| **Backend swap cost** | Change exporter config (1 line) | N/A | N/A |
-
-### 4.10 Multi-Turn Adversarial Probing (P2M's Unique Advantage)
-
-This is where P2M's architecture differs fundamentally from Phoenix. Phoenix evaluates traces after the fact. P2M actively DRIVES multi-turn adversarial conversations while capturing traces.
-
-| Capability | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **Auditor-driven escalation** | ✅ Full + per-turn trace visibility | ✅ Full but blind to internals | ✅ If adapter works |
-| **Per-turn behavior detection** | ✅ Judge sees which turn triggered which nodes | ❌ Can only judge final response per turn | ❌ Same as B |
-| **Adversarial trajectory analysis** | ✅ "Turn 3 bypassed safety node" | ❌ "Turn 3 gave bad advice" (no why) | ❌ Same as B |
-| **Cross-turn state tracking** | ✅ See if agent lost context across turns | ❌ Can only infer from output | ❌ Same as B |
-| **Root cause for failures** | ✅ "Flight tool returned empty → agent hallucinated prices" | ❌ "Agent hallucinated prices" (no root cause) | ❌ Same as B |
-
-### 4.11 Scalability for Large Enterprise (Many Scenarios, Many AI Stacks)
-
-Enterprise with 50 AI applications across 5 frameworks, 3 cloud providers, 200 behavior definitions:
-
-| Dimension | A (OTel) | B (Callable) | C (Adapter) |
-|---|---|---|---|
-| **Onboarding new team** | ~15 min (pip install instrumentor + config) | ~10 min (write wrapper + config) | ~30 min (hope adapter works) |
-| **50 apps × 200 behaviors** | Same infrastructure, different configs | Same | 50 × adapter maintenance |
-| **Shared behavior library** | ✅ Behaviors work regardless of target type | ✅ Same | ⚠️ Adapter-dependent |
-| **Cross-team comparison** | ✅ Rich traces enable apples-to-apples comparison | ⚠️ Different black-box depths | ❌ Different adapter capabilities |
-| **CI/CD integration** | ✅ Same pipeline (traces collected in CI) | ✅ Same pipeline | ⚠️ Adapter reliability varies |
-| **Production monitoring** | ✅ Same traces used for prod eval (online eval) | ❌ Separate eval runs needed | ❌ Separate eval runs needed |
-
-### 4.12 Summary Scorecard
+## 4. Summary scorecard
 
 | Dimension | A (OTel) | B (Callable) | C (Adapter) |
 |---|---|---|---|
@@ -241,23 +142,6 @@ Enterprise with 50 AI applications across 5 frameworks, 3 cloud providers, 200 b
 | Multi-turn probing | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
 | Privacy/security | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | Commercial extensibility | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ |
-
-### 4.13 Comparison with Arize Phoenix Evals
-
-Based on analysis of Phoenix's actual evaluation code, P2M's OTel approach (Approach A) shares the same instrumentation layer but differs fundamentally in evaluation architecture:
-
-| Dimension | Phoenix Evals | P2M Approach A |
-|---|---|---|
-| **Eval trigger** | Passive — evaluate collected traces | Active — drive adversarial probing + capture traces |
-| **Collector** | Arize cloud or `px.Client()` hard dependency | `SpanCollector` Protocol — Phoenix optional |
-| **Judge model** | Per-provider adapters (`OpenAIModel(...)`) | LiteLLM model string — 100+ providers |
-| **Output format** | Flat label + explanation | Typed `BehaviorVerdict` via Pydantic structured output |
-| **Extraction** | Notebook utility functions | First-class typed APIs (span/trajectory/session) |
-| **Eval template** | Generic "correct/incorrect" | Requirement-driven behavior rubrics |
-| **Multi-turn** | Evaluate multi-turn traces after collection | Drive multi-turn adversarial probing, capture per turn |
-| **Span validation** | None | Pre-flight `validate_spans()` |
-
-**Why this matters for the travel planner example:** Phoenix would evaluate a *single collected trace* of the travel planner and classify it correct/incorrect. P2M runs *multiple adversarial turns* — probing from travel planning → medication → child dosage — while capturing OTel traces per turn. The judge then evaluates the *escalation trajectory*, not just one interaction.
 
 ---
 
@@ -324,7 +208,7 @@ v1: 4 nodes → v2: adds currency_converter, visa_checker → v3: adds sub-graph
 | **Best for** | Deep evaluation, enterprise, compliance | Quick start, any agent | Simple AgentExecutor only |
 | **Judge data richness** | 8/8 behaviors per turn | 1/8 behaviors | 1/8 (if it works) |
 | **User effort** | 2 lines + pip install | 3 lines | 0 lines (happy) / 30 min (debug) |
-| **p2m maintenance** | Low (OTLP spec is stable) | Minimal | High (per-framework, ongoing) |
+| **Adaptive eval maintenance** | Low (OTLP spec is stable) | Minimal | High (per-framework, ongoing) |
 | **Scales across frameworks** | Yes (20+ via OpenInference) | Yes (universal) | No (1 adapter per framework) |
 | **Enterprise path** | Yes (compliance, audit, commercial backends) | Limited (black-box) | No |
 
@@ -338,10 +222,152 @@ v1: 4 nodes → v2: adds currency_converter, visa_checker → v3: adds sub-graph
 
 ### The competitive moat
 
-P2M is the only eval tool that combines:
+Adaptive Eval is the only eval tool that combines:
 - **Requirement-driven test generation** — tests come from YOUR requirements, not generic benchmarks
 - **Multi-turn adversarial probing** — auditor drives escalation across turns
 - **Full internal trace visibility** — OTel captures what happens inside each turn
 - **Structured behavior evaluation** — judge evaluates against specific behavior definitions with evidence
 
 Phoenix does trace-then-evaluate (passive). Promptfoo does static red teaming (generic). InspectAI does solver-based benchmarks (academic). None of them do requirement-driven adversarial multi-turn evaluation with internal trace visibility.
+
+---
+
+## Appendix A: Detailed Dimension-by-Dimension Comparison
+
+### A.1 Ease of Use
+
+| Metric | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **Lines of user code** | 2 + pip install | 3 | 0 (config only) |
+| **Time to first eval** | ~7 min | ~5 min | ~3 min (happy) / ~30 min (debug) |
+| **Documentation needed** | OpenInference concept | Function signature | Adapter API + graph schema |
+| **Debugging effort** | Low (traces visible in Phoenix UI) | Low (simple wrapper) | High (schema mismatch) |
+| **Learning curve** | Moderate (OTel concepts) | Minimal | Low initially, steep at failure |
+
+### A.2 Time to Value
+
+| Scenario | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **First eval run** | 7 min | 5 min | 3 min (if adapter matches) |
+| **Second framework** | 2 min (pip install new instrumentor) | 3 min (new wrapper) | 20+ min (new adapter or rewrite) |
+| **Production deployment** | 0 min (reuse existing OTel) | 3 min (deploy wrapper) | N/A (adapters are dev-only) |
+| **Iteration after failure** | 0 min (re-run, traces auto-collected) | 0 min (re-run) | 10+ min (debug adapter state) |
+
+### A.3 Scalability — Less Battle-Tested Frameworks (CrewAI, Microsoft Agent Framework, Mastra)
+
+| Dimension | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **CrewAI support** | ✅ `pip install openinference-instrumentation-crewai` | ✅ Wrap `crew.kickoff()` | ❌ Would need new adapter |
+| **Microsoft Agent Framework support** | ✅ OpenInference package available | ✅ Wrap agent callable | ❌ Would need new adapter |
+| **Mastra (TypeScript/JavaScript)** | ⚠️ OTel works cross-language | ⚠️ Need HTTP bridge | ❌ Python-only adapters (TS/JS agents excluded) |
+| **Framework API breaks** | Nothing breaks — instrumentor is separate | Nothing breaks — wrapper is 3 lines | **Adapter breaks** |
+| **Quality of traces** | Varies — CrewAI instrumentor less mature than LangChain | Consistent (always black-box) | N/A |
+| **Risk for adaptive eval team** | Zero — OpenInference team maintains instrumentors | Zero — developer owns wrapper | **Per-framework maintenance** |
+
+### A.4 Scalability — Custom/Proprietary Agents (Mixed Public + Private)
+
+Enterprise agents commonly mix frameworks: LangGraph orchestration → proprietary retrieval service → MCP tool server → custom guardrails layer.
+
+| Dimension | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **Mixed-framework agents** | ✅ OTel context propagation across services | ✅ Black-box at system boundary | ❌ Adapter sees one framework only |
+| **Proprietary components** | ✅ Manual `@tracer` spans (~10 LOC per component) | ✅ Entire system is one callable | ❌ Cannot adapter proprietary code |
+| **Multi-service agents** | ⚠️ Requires `traceparent` header propagation | ✅ Single entry point | ❌ Single-process only |
+| **Private/air-gapped** | ✅ File-based trace export (no Phoenix dependency) | ✅ No dependencies | ❌ May need external packages |
+
+### A.5 Maintainability for Adaptive Eval Team
+
+| Cost | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **Code to maintain** | ~430 LOC (otel.py + otel_session.py) | ~80 LOC (CallableSession) | ~250 LOC **per framework** |
+| **When LangGraph v1.0 ships** | Nothing changes | Nothing changes | **Rewrite adapter** |
+| **When CrewAI changes API** | Nothing changes | Nothing changes | **Rewrite adapter** |
+| **When new framework appears** | Nothing (works if it has OTel instrumentor) | Nothing (user writes wrapper) | **Write new adapter** |
+| **Annual maintenance estimate** | ~1-2 days (OTLP spec is stable) | ~0 days | ~2-4 weeks across frameworks |
+| **Dependency risk** | Low (OpenInference spec, not Phoenix API) | Zero | High (per-framework coupling) |
+
+### A.6 Integration Complexity — Multi-Provider / Multi-Framework
+
+Enterprise scenario: LangGraph agent using OpenAI for planning, Anthropic for safety checks, Google for embeddings, MCP for tools.
+
+| Dimension | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **Multi-LLM tracing** | ✅ Each provider's spans captured separately | ❌ Only sees final output | ❌ Only sees final output |
+| **Tool call attribution** | ✅ Which tool, which model, which latency | ❌ Invisible | ❌ Invisible |
+| **Cost attribution** | ✅ Token counts per model per turn | ❌ Cannot measure | ❌ Cannot measure |
+| **Cross-provider issues** | ✅ Visible (e.g., Anthropic safety check blocked the response) | ❌ Silent | ❌ Silent |
+
+### A.7 Cost and Latency
+
+| Factor | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **Instrumentation overhead** | ~2-5% latency (OTel span creation) | 0% | 0% |
+| **Trace storage** | ~1-10KB per turn (OTLP JSON) | 0 | 0 |
+| **Judge token cost per turn** | Higher — richer context (~2-5K tokens) | Lower — input/output only (~500 tokens) | Same as B |
+| **Judge quality per token** | **Much higher** — evidence-backed verdicts | Lower — can only assess final text | Same as B |
+| **Total eval cost (100 seeds)** | ~$3-8 (more tokens, better verdicts) | ~$1-3 (fewer tokens, surface-level) | ~$1-3 (if it works) |
+| **Trace compression** | ✅ Built-in (`compress_trace_for_judge`) | N/A | N/A |
+
+### A.8 Enterprise Concerns — Privacy and Security
+
+| Concern | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **Data residency** | ✅ Traces stay local (file export, no cloud) | ✅ No data leaves process | ✅ No data leaves process |
+| **PII in traces** | ⚠️ Spans may contain user data — need scrubbing | ⚠️ Same risk in I/O | Same as B |
+| **Credential exposure** | ⚠️ Tool args may contain API keys | ❌ Not visible | ❌ Not visible |
+| **Audit trail** | ✅ Full execution audit per conversation | Partial (I/O only) | Partial |
+| **Air-gapped environments** | ✅ File-based trace export, no internet needed | ✅ No internet needed | ✅ No internet needed |
+| **Compliance (SOC2, HIPAA)** | ✅ Provable evidence of agent behavior | Partial evidence | Partial evidence |
+
+### A.9 Extensibility to Commercial Tracing Services
+
+| Service | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **Datadog APM** | ✅ OTel exporter → Datadog | ❌ No integration | ❌ No integration |
+| **Honeycomb** | ✅ OTel exporter → Honeycomb | ❌ | ❌ |
+| **Arize Phoenix Cloud** | ✅ Native | ❌ | ❌ |
+| **Azure Monitor** | ✅ OTel exporter → App Insights | ❌ | ❌ |
+| **Custom backends** | ✅ Any OTLP-compatible collector | ❌ | ❌ |
+| **Backend swap cost** | Change exporter config (1 line) | N/A | N/A |
+
+### A.10 Multi-Turn Adversarial Probing (Adaptive Eval's Unique Advantage)
+
+This is where Adaptive Eval's architecture differs fundamentally from Phoenix. Phoenix evaluates traces after the fact. Adaptive Eval actively DRIVES multi-turn adversarial conversations while capturing traces.
+
+| Capability | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **Auditor-driven escalation** | ✅ Full + per-turn trace visibility | ✅ Full but blind to internals | ✅ If adapter works |
+| **Per-turn behavior detection** | ✅ Judge sees which turn triggered which nodes | ❌ Can only judge final response per turn | ❌ Same as B |
+| **Adversarial trajectory analysis** | ✅ "Turn 3 bypassed safety node" | ❌ "Turn 3 gave bad advice" (no why) | ❌ Same as B |
+| **Cross-turn state tracking** | ✅ See if agent lost context across turns | ❌ Can only infer from output | ❌ Same as B |
+| **Root cause for failures** | ✅ "Flight tool returned empty → agent hallucinated prices" | ❌ "Agent hallucinated prices" (no root cause) | ❌ Same as B |
+
+### A.11 Scalability for Large Enterprise (Many Scenarios, Many AI Stacks)
+
+Enterprise with 50 AI applications across 5 frameworks, 3 cloud providers, 200 behavior definitions:
+
+| Dimension | A (OTel) | B (Callable) | C (Adapter) |
+|---|---|---|---|
+| **Onboarding new team** | ~15 min (pip install instrumentor + config) | ~10 min (write wrapper + config) | ~30 min (hope adapter works) |
+| **50 apps × 200 behaviors** | Same infrastructure, different configs | Same | 50 × adapter maintenance |
+| **Shared behavior library** | ✅ Behaviors work regardless of target type | ✅ Same | ⚠️ Adapter-dependent |
+| **Cross-team comparison** | ✅ Rich traces enable apples-to-apples comparison | ⚠️ Different black-box depths | ❌ Different adapter capabilities |
+| **CI/CD integration** | ✅ Same pipeline (traces collected in CI) | ✅ Same pipeline | ⚠️ Adapter reliability varies |
+| **Production monitoring** | ✅ Same traces used for prod eval (online eval) | ❌ Separate eval runs needed | ❌ Separate eval runs needed |
+
+## Appendix B: Comparison with Arize Phoenix Evals
+
+Based on analysis of Phoenix's actual evaluation code, Adaptive Eval's OTel approach (Approach A) shares the same instrumentation layer but differs fundamentally in evaluation architecture:
+
+| Dimension | Phoenix Evals | Adaptive Eval Approach A |
+|---|---|---|
+| **Eval trigger** | Passive — evaluate collected traces | Active — drive adversarial probing + capture traces |
+| **Collector** | Arize cloud or `px.Client()` hard dependency | `SpanCollector` Protocol — Phoenix optional |
+| **Judge model** | Per-provider adapters (`OpenAIModel(...)`) | LiteLLM model string — 100+ providers |
+| **Output format** | Flat label + explanation | Typed `BehaviorVerdict` via Pydantic structured output |
+| **Extraction** | Notebook utility functions | First-class typed APIs (span/trajectory/session) |
+| **Eval template** | Generic "correct/incorrect" | Requirement-driven behavior rubrics |
+| **Multi-turn** | Evaluate multi-turn traces after collection | Drive multi-turn adversarial probing, capture per turn |
+| **Span validation** | None | Pre-flight `validate_spans()` |
+
+**Why this matters for the travel planner example:** Phoenix would evaluate a *single collected trace* of the travel planner and classify it correct/incorrect. Adaptive Eval runs *multiple adversarial turns* — probing from travel planning → medication → child dosage — while capturing OTel traces per turn. The judge then evaluates the *escalation trajectory*, not just one interaction.
