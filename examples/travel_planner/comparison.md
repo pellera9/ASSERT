@@ -2,7 +2,7 @@
 
 **System under test:** Multi-agent LangGraph travel planner with MCP tools (4 nodes, conditional routing, shared state)
 **Evaluation type:** Multi-turn adversarial probing — auditor escalates across turns to elicit behaviors
-**Same agent, three integration approaches. Two POCs validated.**
+**Same agent, three integration approaches. All three POCs implemented.**
 
 ---
 
@@ -55,7 +55,7 @@ target:
 | **External dependencies** | None required (OpenInference spec as contract) | None | `langchain-core`, `langgraph` |
 | **Maintenance surface** | OTLP JSON format (stable OTel spec) | Python import + invoke (stable) | LangGraph API surface (pre-1.0, unstable) |
 | **Frameworks covered** | All that emit OTel spans (20+ via OpenInference) | All (universal) | LangChain only (1 of 7+) |
-| **POC status** | ✅ Parser complete, session designed | ✅ Complete, 5 tests passing | Example only |
+| **POC status** | ✅ Complete — 67 tests (parser + session + collector + extraction) | ✅ Complete — 5 tests | ⚠️ Illustrative example only |
 
 ---
 
@@ -263,20 +263,35 @@ Based on analysis of Phoenix's actual evaluation code, P2M's OTel approach (Appr
 
 ## 5. POC status and remaining work
 
-| Approach | Component | Status | Location |
-|----------|-----------|--------|----------|
-| **B** | `CallableSession` | ✅ Complete | `p2m/core/session.py` |
-| **B** | `TargetConfig.callable` | ✅ Complete | `p2m/core/config_model.py` |
-| **B** | Rollout wiring | ✅ Complete | `p2m/stages/rollout.py` |
-| **B** | Tests | ✅ 5 passing | `tests/test_framework_agnostic.py` |
-| **A** | OTLP JSON parser | ✅ Complete | `p2m/core/otel.py` |
-| **A** | Span validator | ✅ Complete | `p2m/core/otel.py` |
-| **A** | Trace compression | ✅ Complete | `p2m/core/otel.py` |
-| **A** | `OTelTracedSession` | ✅ Complete | `p2m/core/otel_session.py` |
-| **A** | `TraceExporter` protocol | ✅ Complete | `p2m/core/otel.py` |
-| **A** | Tests (parser) | ✅ 14 passing | `tests/test_framework_agnostic.py` |
-| **A** | `p2m judge --traces` CLI | 🔲 Not started | Backlog |
-| **C** | Example adapter | ⚠️ Illustrative | `examples/travel_planner/approach_c_adapter.py` |
+### Approach B — Callable (complete)
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| `CallableSession` | ✅ Complete | `p2m/core/session.py` |
+| `TargetConfig.callable` | ✅ Complete | `p2m/core/config_model.py` |
+| Rollout wiring | ✅ Complete | `p2m/stages/rollout.py` |
+| Tests | ✅ 5 passing | `tests/test_framework_agnostic.py` |
+
+### Approach A — OTel (complete)
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| OTLP JSON parser | ✅ Complete | `p2m/core/otel.py` |
+| Span validator | ✅ Complete | `p2m/core/otel.py` |
+| Trace compression | ✅ Complete | `p2m/core/otel.py` |
+| `OTelTracedSession` | ✅ Complete | `p2m/core/otel_session.py` |
+| `SpanCollector` Protocol | ✅ Complete | `p2m/core/collector.py` |
+| `PhoenixCollector` (optional) | ✅ Complete | `p2m/core/collector.py` |
+| `DataFrameCollector` | ✅ Complete | `p2m/core/collector.py` |
+| 3-granularity extraction APIs | ✅ Complete | `p2m/core/otel.py` |
+| Tests | ✅ 62 passing | `tests/test_framework_agnostic.py` |
+| `p2m judge --traces` CLI | 🔲 Not started | Backlog |
+
+### Approach C — Adapter (illustrative only)
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Example adapter | ⚠️ Illustrative | `examples/travel_planner/approach_c_adapter.py` |
 
 ---
 
