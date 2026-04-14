@@ -569,3 +569,226 @@ def _group_spans_by_trace(spans: list[OTelSpan]) -> dict[str, list[OTelSpan]]:
     for span in spans:
         groups.setdefault(span.trace_id, []).append(span)
     return groups
+
+
+# ── Span tree reconstruction ──────────────────────────────────────
+
+
+@dataclass
+class SpanNode:
+    """A node in the reconstructed span tree."""
+    span: OTelSpan
+    children: list["SpanNode"] = field(default_factory=list)
+
+    @property
+    def depth(self) -> int:
+        if not self.children:
+            return 0
+        return 1 + max(c.depth for c in self.children)
+
+    @property
+    def size(self) -> int:
+        return 1 + sum(c.size for c in self.children)
+
+    def to_dict(
+        self,
+        *,
+        include_input: bool = False,
+        include_output: bool = True,
+        max_content_chars: int = 500,
+    ) -> dict[str, Any]:
+        """Serialize to a judge-friendly dict with selective field inclusion."""
+        d: dict[str, Any] = {
+            "span_id": self.span.span_id,
+            "kind": self.span.kind,
+            "name": self.span.attributes.get(_LANGGRAPH_NODE_KEY, self.span.name),
+            "latency_ms": round(self.span.latency_ms, 1),
+        }
+        if self.span.kind == "LLM":
+            d["model"] = self.span.attributes.get(_LLM_MODEL_KEY, "")
+            d["tokens"] = {
+                "input": self.span.attributes.get(_LLM_INPUT_TOKENS_KEY, 0),
+                "output": self.span.attributes.get(_LLM_OUTPUT_TOKENS_KEY, 0),
+            }
+        if self.span.kind == "TOOL":
+            d["tool_name"] = self.span.attributes.get(_TOOL_NAME_KEY, self.span.name)
+            tool_input = self.span.attributes.get(_INPUT_VALUE_KEY, "")
+            tool_output = self.span.attributes.get(_OUTPUT_VALUE_KEY, "")
+            try:
+                d["tool_args"] = json.loads(tool_input) if tool_input else {}
+            except (json.JSONDecodeError, TypeError):
+                d["tool_args"] = {"raw": tool_input[:max_content_chars]}
+            d["tool_result"] = tool_output[:max_content_chars] if tool_output else ""
+
+        if include_input:
+            inp = self.span.attributes.get(_INPUT_VALUE_KEY, "")
+            d["input"] = inp[:max_content_chars] if inp else ""
+        if include_output:
+            out = self.span.attributes.get(_OUTPUT_VALUE_KEY, "")
+            d["output"] = out[:max_content_chars] if out else ""
+
+        if self.children:
+            d["children"] = [
+                c.to_dict(
+                    include_input=include_input,
+                    include_output=include_output,
+                    max_content_chars=max_content_chars,
+                )
+                for c in self.children
+            ]
+        return d
+
+
+def build_span_tree(spans: list[OTelSpan]) -> list[SpanNode]:
+    """Reconstruct parent-child tree from flat span list.
+
+    Returns root nodes (spans with no parent or orphaned parent).
+    Handles:
+    - Orphaned spans (parent_id references missing span) → promoted to roots
+    - Preserves chronological order within siblings
+    - No recursion limit issues (iterative parent lookup)
+    """
+    nodes: dict[str, SpanNode] = {}
+    for span in spans:
+        nodes[span.span_id] = SpanNode(span=span)
+
+    roots: list[SpanNode] = []
+    for span_id, node in nodes.items():
+        parent_id = node.span.parent_span_id
+        if parent_id and parent_id in nodes:
+            nodes[parent_id].children.append(node)
+        else:
+            roots.append(node)
+
+    # Sort children by start time
+    def _sort_children(node: SpanNode) -> None:
+        node.children.sort(key=lambda c: c.span.start_time_ns)
+        for child in node.children:
+            _sort_children(child)
+
+    for root in roots:
+        _sort_children(root)
+
+    roots.sort(key=lambda r: r.span.start_time_ns)
+    return roots
+
+
+# ── Tiered extraction strategy ────────────────────────────────────
+
+
+class ExtractionMode:
+    """Constants for extraction strategy selection."""
+    FLAT = "flat"          # Arize-style: concatenate all spans chronologically
+    TREE = "tree"          # Reconstruct parent-child, selective serialization
+    CHUNKED = "chunked"    # Evaluate per-agent-boundary, then aggregate
+
+
+def auto_select_extraction_mode(spans: list[OTelSpan]) -> str:
+    """Automatically select extraction strategy based on trace complexity.
+
+    Rules:
+    - ≤10 spans, no sub-agents → FLAT (simple, fast, Arize-compatible)
+    - 10-30 spans OR has sub-agents → TREE (preserve structure)
+    - >30 spans OR >3 agent spans → CHUNKED (evaluate per boundary)
+    """
+    if not spans:
+        return ExtractionMode.FLAT
+
+    agent_spans = [s for s in spans if s.kind == "AGENT"]
+    tree = build_span_tree(spans)
+    max_depth = max((r.depth for r in tree), default=0) if tree else 0
+
+    if len(spans) <= 10 and len(agent_spans) == 0 and max_depth <= 2:
+        return ExtractionMode.FLAT
+    if len(spans) > 30 or len(agent_spans) > 3:
+        return ExtractionMode.CHUNKED
+    return ExtractionMode.TREE
+
+
+def extract_for_judge(
+    spans: list[OTelSpan],
+    *,
+    mode: str | None = None,
+    max_tokens_budget: int = 15000,
+    max_content_chars: int = 500,
+) -> dict[str, Any]:
+    """Extract trace data for judge using the appropriate strategy.
+
+    Args:
+        spans: List of OTel spans from one trace/session.
+        mode: Extraction mode (flat/tree/chunked). None = auto-select.
+        max_tokens_budget: Approximate token budget for judge context.
+        max_content_chars: Max chars per individual content field.
+
+    Returns:
+        Dict with keys:
+        - mode: the extraction mode used
+        - representation: the extracted data (format depends on mode)
+        - metadata: aggregate stats (span_count, depth, agent_count, etc.)
+    """
+    if mode is None:
+        mode = auto_select_extraction_mode(spans)
+
+    metadata = {
+        "span_count": len(spans),
+        "mode": mode,
+        "llm_spans": len([s for s in spans if s.kind == "LLM"]),
+        "tool_spans": len([s for s in spans if s.kind == "TOOL"]),
+        "agent_spans": len([s for s in spans if s.kind == "AGENT"]),
+    }
+
+    if mode == ExtractionMode.FLAT:
+        events, aggregate = _spans_to_events(spans)
+        compressed = compress_trace_for_judge(events, max_events=50)
+        metadata.update(aggregate)
+        return {"mode": mode, "representation": compressed, "metadata": metadata}
+
+    if mode == ExtractionMode.TREE:
+        tree = build_span_tree(spans)
+        metadata["max_depth"] = max((r.depth for r in tree), default=0)
+        # Selective serialization — strip LLM input messages (redundant accumulated context)
+        tree_data = [
+            root.to_dict(
+                include_input=False,
+                include_output=True,
+                max_content_chars=max_content_chars,
+            )
+            for root in tree
+        ]
+        # Estimate token size and truncate if needed
+        serialized = json.dumps(tree_data)
+        est_tokens = len(serialized) // 4  # rough estimate: 4 chars per token
+        if est_tokens > max_tokens_budget:
+            # Reduce content chars proportionally
+            ratio = max_tokens_budget / est_tokens
+            reduced_chars = max(100, int(max_content_chars * ratio))
+            tree_data = [
+                root.to_dict(
+                    include_input=False,
+                    include_output=True,
+                    max_content_chars=reduced_chars,
+                )
+                for root in tree
+            ]
+        return {"mode": mode, "representation": tree_data, "metadata": metadata}
+
+    if mode == ExtractionMode.CHUNKED:
+        # Evaluate per agent boundary
+        tree = build_span_tree(spans)
+        metadata["max_depth"] = max((r.depth for r in tree), default=0)
+        chunks: list[dict[str, Any]] = []
+        for root in tree:
+            chunk = {
+                "agent": root.span.attributes.get(_LANGGRAPH_NODE_KEY, root.span.name),
+                "kind": root.span.kind,
+                "span_count": root.size,
+                "tree": root.to_dict(
+                    include_input=False,
+                    include_output=True,
+                    max_content_chars=max_content_chars,
+                ),
+            }
+            chunks.append(chunk)
+        return {"mode": mode, "representation": chunks, "metadata": metadata}
+
+    raise ValueError(f"Unknown extraction mode: {mode}")

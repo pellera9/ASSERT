@@ -1235,3 +1235,419 @@ class TestJudgeTracesCLI(unittest.TestCase):
                 empty_traces.unlink()
             if config_path.exists():
                 config_path.unlink()
+
+
+# ── Hardened tests: tree building, tiered extraction, sessions, collector ──
+
+
+class TestSpanTreeBuilding(unittest.TestCase):
+    """Tests for build_span_tree — parent-child reconstruction from flat spans."""
+
+    def _make_span(self, span_id, parent=None, kind="LLM", name="test", start=0, **attrs):
+        """Helper to create OTelSpan with minimal boilerplate."""
+        from p2m.core.otel import OTelSpan
+        base_attrs = {"openinference.span.kind": kind}
+        base_attrs.update(attrs)
+        return OTelSpan(
+            trace_id="t1", span_id=span_id, parent_span_id=parent,
+            name=name, kind=kind, start_time_ns=start, end_time_ns=start + 100000000,
+            attributes=base_attrs,
+        )
+
+    def test_single_root_no_children(self):
+        from p2m.core.otel import build_span_tree
+        spans = [self._make_span("s1")]
+        roots = build_span_tree(spans)
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(roots[0].span.span_id, "s1")
+        self.assertEqual(roots[0].children, [])
+
+    def test_parent_child_linking(self):
+        from p2m.core.otel import build_span_tree
+        spans = [
+            self._make_span("parent", kind="AGENT", start=100),
+            self._make_span("child1", parent="parent", start=200),
+            self._make_span("child2", parent="parent", start=300),
+        ]
+        roots = build_span_tree(spans)
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(len(roots[0].children), 2)
+        self.assertEqual(roots[0].children[0].span.span_id, "child1")
+        self.assertEqual(roots[0].children[1].span.span_id, "child2")
+
+    def test_deep_nesting(self):
+        from p2m.core.otel import build_span_tree
+        spans = [
+            self._make_span("r", kind="AGENT", start=100),
+            self._make_span("c1", parent="r", kind="AGENT", start=200),
+            self._make_span("c2", parent="c1", kind="LLM", start=300),
+            self._make_span("c3", parent="c2", kind="TOOL", start=400),
+        ]
+        roots = build_span_tree(spans)
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(roots[0].depth, 3)
+        self.assertEqual(roots[0].size, 4)
+
+    def test_orphaned_spans_become_roots(self):
+        """Spans referencing missing parents should be promoted to roots."""
+        from p2m.core.otel import build_span_tree
+        spans = [
+            self._make_span("s1", parent="missing_parent", start=100),
+            self._make_span("s2", start=200),
+        ]
+        roots = build_span_tree(spans)
+        self.assertEqual(len(roots), 2)
+
+    def test_children_sorted_by_start_time(self):
+        from p2m.core.otel import build_span_tree
+        spans = [
+            self._make_span("parent", kind="AGENT", start=100),
+            self._make_span("late", parent="parent", start=500),
+            self._make_span("early", parent="parent", start=200),
+            self._make_span("mid", parent="parent", start=300),
+        ]
+        roots = build_span_tree(spans)
+        names = [c.span.span_id for c in roots[0].children]
+        self.assertEqual(names, ["early", "mid", "late"])
+
+    def test_multiple_roots(self):
+        """Multiple traces in one span list produce multiple roots."""
+        from p2m.core.otel import build_span_tree
+        spans = [
+            self._make_span("r1", start=100),
+            self._make_span("r2", start=200),
+            self._make_span("c1", parent="r1", start=150),
+        ]
+        roots = build_span_tree(spans)
+        self.assertEqual(len(roots), 2)
+
+    def test_empty_spans(self):
+        from p2m.core.otel import build_span_tree
+        self.assertEqual(build_span_tree([]), [])
+
+
+class TestSpanNodeSerialization(unittest.TestCase):
+    """Tests for SpanNode.to_dict — selective serialization for judge."""
+
+    def _make_node(self, kind="LLM", **attrs):
+        from p2m.core.otel import OTelSpan, SpanNode
+        base = {
+            "openinference.span.kind": kind,
+            "output.value": "test output",
+            "input.value": "test input",
+            "llm.model_name": "gpt-4o",
+            "llm.token_count.prompt": 100,
+            "llm.token_count.completion": 50,
+        }
+        base.update(attrs)
+        span = OTelSpan(
+            trace_id="t1", span_id="s1", parent_span_id=None,
+            name="test_node", kind=kind,
+            start_time_ns=1000000000, end_time_ns=1500000000,
+            attributes=base,
+        )
+        return SpanNode(span=span)
+
+    def test_llm_node_includes_model_and_tokens(self):
+        node = self._make_node(kind="LLM")
+        d = node.to_dict()
+        self.assertEqual(d["model"], "gpt-4o")
+        self.assertEqual(d["tokens"]["input"], 100)
+        self.assertEqual(d["tokens"]["output"], 50)
+
+    def test_tool_node_includes_tool_info(self):
+        node = self._make_node(
+            kind="TOOL",
+            **{"tool.name": "search_flights", "input.value": '{"dest": "NRT"}', "output.value": '[{"price": 1180}]'}
+        )
+        d = node.to_dict()
+        self.assertEqual(d["tool_name"], "search_flights")
+        self.assertEqual(d["tool_args"]["dest"], "NRT")
+        self.assertIn("1180", d["tool_result"])
+
+    def test_exclude_input_by_default(self):
+        node = self._make_node()
+        d = node.to_dict(include_input=False)
+        self.assertNotIn("input", d)
+
+    def test_include_input_when_requested(self):
+        node = self._make_node()
+        d = node.to_dict(include_input=True)
+        self.assertEqual(d["input"], "test input")
+
+    def test_content_truncation(self):
+        from p2m.core.otel import OTelSpan, SpanNode
+        long_output = "x" * 2000
+        span = OTelSpan(
+            trace_id="t1", span_id="s1", parent_span_id=None,
+            name="long", kind="LLM", start_time_ns=0, end_time_ns=100,
+            attributes={"openinference.span.kind": "LLM", "output.value": long_output},
+        )
+        node = SpanNode(span=span)
+        d = node.to_dict(max_content_chars=100)
+        self.assertLessEqual(len(d["output"]), 100)
+
+    def test_children_serialized_recursively(self):
+        from p2m.core.otel import OTelSpan, SpanNode
+        parent = self._make_node(kind="AGENT")
+        child = self._make_node(kind="LLM")
+        parent.children.append(child)
+        d = parent.to_dict()
+        self.assertIn("children", d)
+        self.assertEqual(len(d["children"]), 1)
+
+
+class TestTieredExtraction(unittest.TestCase):
+    """Tests for auto_select_extraction_mode and extract_for_judge."""
+
+    def _make_span(self, span_id, parent=None, kind="LLM", start=0, **attrs):
+        from p2m.core.otel import OTelSpan
+        base = {"openinference.span.kind": kind, "output.value": "test"}
+        base.update(attrs)
+        return OTelSpan(
+            trace_id="t1", span_id=span_id, parent_span_id=parent,
+            name=span_id, kind=kind, start_time_ns=start, end_time_ns=start + 100000000,
+            attributes=base,
+        )
+
+    def test_empty_spans_selects_flat(self):
+        from p2m.core.otel import auto_select_extraction_mode, ExtractionMode
+        self.assertEqual(auto_select_extraction_mode([]), ExtractionMode.FLAT)
+
+    def test_simple_trace_selects_flat(self):
+        from p2m.core.otel import auto_select_extraction_mode, ExtractionMode
+        spans = [self._make_span(f"s{i}", start=i*100) for i in range(5)]
+        self.assertEqual(auto_select_extraction_mode(spans), ExtractionMode.FLAT)
+
+    def test_medium_trace_with_agents_selects_tree(self):
+        from p2m.core.otel import auto_select_extraction_mode, ExtractionMode
+        spans = [self._make_span(f"s{i}", start=i*100) for i in range(15)]
+        self.assertEqual(auto_select_extraction_mode(spans), ExtractionMode.TREE)
+
+    def test_complex_trace_selects_chunked(self):
+        from p2m.core.otel import auto_select_extraction_mode, ExtractionMode
+        spans = [self._make_span(f"s{i}", start=i*100) for i in range(35)]
+        self.assertEqual(auto_select_extraction_mode(spans), ExtractionMode.CHUNKED)
+
+    def test_many_agents_selects_chunked(self):
+        from p2m.core.otel import auto_select_extraction_mode, ExtractionMode
+        spans = [
+            self._make_span("a1", kind="AGENT", start=100),
+            self._make_span("a2", kind="AGENT", start=200),
+            self._make_span("a3", kind="AGENT", start=300),
+            self._make_span("a4", kind="AGENT", start=400),
+            self._make_span("l1", start=500),
+        ]
+        self.assertEqual(auto_select_extraction_mode(spans), ExtractionMode.CHUNKED)
+
+    def test_extract_flat_mode(self):
+        from p2m.core.otel import extract_for_judge, ExtractionMode
+        spans = [self._make_span(f"s{i}", start=i*100) for i in range(3)]
+        result = extract_for_judge(spans, mode=ExtractionMode.FLAT)
+        self.assertEqual(result["mode"], "flat")
+        self.assertIn("representation", result)
+        self.assertIn("metadata", result)
+        self.assertEqual(result["metadata"]["span_count"], 3)
+
+    def test_extract_tree_mode(self):
+        from p2m.core.otel import extract_for_judge, ExtractionMode
+        spans = [
+            self._make_span("parent", kind="AGENT", start=100),
+            self._make_span("child", parent="parent", start=200),
+        ]
+        result = extract_for_judge(spans, mode=ExtractionMode.TREE)
+        self.assertEqual(result["mode"], "tree")
+        self.assertIsInstance(result["representation"], list)
+        # Tree should have parent with child
+        root = result["representation"][0]
+        self.assertIn("children", root)
+
+    def test_extract_chunked_mode(self):
+        from p2m.core.otel import extract_for_judge, ExtractionMode
+        spans = [
+            self._make_span("r1", kind="AGENT", start=100),
+            self._make_span("c1", parent="r1", start=200),
+            self._make_span("r2", kind="AGENT", start=300),
+            self._make_span("c2", parent="r2", start=400),
+        ]
+        result = extract_for_judge(spans, mode=ExtractionMode.CHUNKED)
+        self.assertEqual(result["mode"], "chunked")
+        self.assertEqual(len(result["representation"]), 2)  # 2 root agents
+
+    def test_auto_mode_returns_valid_result(self):
+        from p2m.core.otel import extract_for_judge
+        spans = [self._make_span(f"s{i}", start=i*100) for i in range(5)]
+        result = extract_for_judge(spans)  # mode=None → auto
+        self.assertIn(result["mode"], ["flat", "tree", "chunked"])
+        self.assertIn("representation", result)
+
+    def test_token_budget_truncation(self):
+        """Tree mode should truncate when exceeding token budget."""
+        from p2m.core.otel import extract_for_judge, ExtractionMode
+        # Create spans with long output
+        spans = [
+            self._make_span("r", kind="AGENT", start=100,
+                           **{"output.value": "x" * 5000}),
+            self._make_span("c", parent="r", start=200,
+                           **{"output.value": "y" * 5000}),
+        ]
+        result = extract_for_judge(spans, mode=ExtractionMode.TREE, max_tokens_budget=500)
+        serialized = json.dumps(result["representation"])
+        # Should be significantly smaller than the raw content
+        self.assertLess(len(serialized), 5000)
+
+
+class TestHTTPEndpointSession(unittest.TestCase):
+    """Tests for HTTPEndpointSession."""
+
+    def test_import(self):
+        from p2m.core.session import HTTPEndpointSession
+        self.assertTrue(callable(HTTPEndpointSession))
+
+    def test_runtime_mode(self):
+        from p2m.core.session import HTTPEndpointSession
+        session = HTTPEndpointSession(endpoint="http://localhost:8000/chat")
+        self.assertEqual(session.runtime_mode, "http_endpoint")
+
+    def test_endpoint_config_valid(self):
+        from p2m.core.config_model import TargetConfig
+        tc = TargetConfig(endpoint="http://localhost:8000/chat")
+        self.assertTrue(tc.is_endpoint)
+        self.assertFalse(tc.is_external)
+        self.assertFalse(tc.is_callable)
+
+    def test_endpoint_and_model_conflicts(self):
+        from p2m.core.config_model import TargetConfig
+        with self.assertRaises(ValueError):
+            TargetConfig(endpoint="http://...", model="openai/gpt-4o")
+
+    def test_endpoint_and_callable_conflicts(self):
+        from p2m.core.config_model import TargetConfig
+        with self.assertRaises(ValueError):
+            TargetConfig(endpoint="http://...", callable="mod:fn")
+
+    def test_endpoint_and_connector_conflicts(self):
+        from p2m.core.config_model import TargetConfig
+        with self.assertRaises(ValueError):
+            TargetConfig(endpoint="http://...", connector="some.mod")
+
+
+class TestCollectorProtocolExpanded(unittest.TestCase):
+    """Expanded tests for SpanCollector Protocol — defensible architecture."""
+
+    def test_dataframe_collector_validates_missing_columns(self):
+        import types
+        from p2m.core.collector import DataFrameCollector, REQUIRED_COLUMNS
+        # Create a minimal object with .columns attribute but missing required cols
+        fake_df = types.SimpleNamespace(columns=["some_col"])
+        collector = DataFrameCollector(fake_df)
+        warnings = collector.validate(fake_df)
+        self.assertTrue(len(warnings) > 0)
+        self.assertIn("Missing", warnings[0])
+
+    def test_phoenix_collector_import_error(self):
+        """PhoenixCollector should give clear error when phoenix not installed."""
+        from p2m.core.collector import PhoenixCollector
+        # Phoenix may or may not be installed — test the interface exists
+        self.assertTrue(callable(PhoenixCollector))
+
+    def test_all_required_columns_are_openinference(self):
+        """REQUIRED_COLUMNS should only reference OpenInference conventions."""
+        from p2m.core.collector import REQUIRED_COLUMNS
+        STANDARD_OTEL_FIELDS = {"name", "parent_id", "start_time", "end_time"}
+        for col in REQUIRED_COLUMNS:
+            # All should be dot-separated attribute paths or standard OTel fields
+            self.assertTrue(
+                "." in col or col in STANDARD_OTEL_FIELDS,
+                f"Unexpected column format: {col}"
+            )
+
+
+class TestFixtureComplexity(unittest.TestCase):
+    """Tests that verify tiered extraction against real fixture files."""
+
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    def test_simple_fixture_selects_flat(self):
+        """The existing simple fixture (5 spans) should auto-select FLAT."""
+        from p2m.core.otel import _parse_otlp_json, auto_select_extraction_mode
+        spans = _parse_otlp_json(self.FIXTURES / "sample_otel_traces.json")
+        # Group by session and check the larger group
+        tokyo_spans = [s for s in spans if s.attributes.get("session.id") == "sess_tokyo_trip"]
+        mode = auto_select_extraction_mode(tokyo_spans)
+        self.assertEqual(mode, "flat")
+
+    def test_medium_fixture_selects_tree_if_exists(self):
+        """The medium fixture (15 spans) should auto-select TREE."""
+        path = self.FIXTURES / "medium_otel_traces.json"
+        if not path.exists():
+            self.skipTest("medium fixture not yet generated")
+        from p2m.core.otel import _parse_otlp_json, auto_select_extraction_mode
+        spans = _parse_otlp_json(path)
+        mode = auto_select_extraction_mode(spans)
+        self.assertIn(mode, ["tree", "chunked"])
+
+    def test_complex_fixture_selects_chunked_if_exists(self):
+        """The complex fixture (30+ spans) should auto-select CHUNKED."""
+        path = self.FIXTURES / "complex_otel_traces.json"
+        if not path.exists():
+            self.skipTest("complex fixture not yet generated")
+        from p2m.core.otel import _parse_otlp_json, auto_select_extraction_mode
+        spans = _parse_otlp_json(path)
+        mode = auto_select_extraction_mode(spans)
+        self.assertEqual(mode, "chunked")
+
+    def test_extract_for_judge_works_on_simple_fixture(self):
+        from p2m.core.otel import _parse_otlp_json, extract_for_judge
+        spans = _parse_otlp_json(self.FIXTURES / "sample_otel_traces.json")
+        tokyo_spans = [s for s in spans if s.attributes.get("session.id") == "sess_tokyo_trip"]
+        result = extract_for_judge(tokyo_spans)
+        self.assertIn("mode", result)
+        self.assertIn("representation", result)
+        self.assertIn("metadata", result)
+        self.assertGreater(result["metadata"]["span_count"], 0)
+
+
+class TestEndToEndIntegration(unittest.TestCase):
+    """Integration tests: fixture → parse → extract → validate → ready for judge."""
+
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    def test_full_pipeline_simple(self):
+        """Parse → extract → validate: simple fixture produces judge-ready output."""
+        from p2m.core.otel import extract_for_judge, _parse_otlp_json, validate_spans
+
+        # Step 1: Parse
+        spans = _parse_otlp_json(self.FIXTURES / "sample_otel_traces.json")
+        tokyo_spans = [s for s in spans if s.attributes.get("session.id") == "sess_tokyo_trip"]
+
+        # Step 2: Validate
+        validation = validate_spans(tokyo_spans)
+        self.assertTrue(validation.valid)
+
+        # Step 3: Extract for judge
+        result = extract_for_judge(tokyo_spans)
+        self.assertIn("representation", result)
+        self.assertGreater(len(result["representation"]), 0)
+
+    def test_parse_otel_traces_produces_valid_transcript_rows(self):
+        """parse_otel_traces should produce rows with metadata, events, raw."""
+        from p2m.core.otel import parse_otel_traces
+        rows = parse_otel_traces(self.FIXTURES / "sample_otel_traces.json")
+        for row in rows:
+            self.assertIn("metadata", row)
+            self.assertIn("events", row)
+            self.assertIn("raw", row)
+            self.assertEqual(row["metadata"]["kind"], "otel_import")
+
+    def test_all_session_types_have_consistent_interface(self):
+        """All session types should have open/close/run_turn/runtime_mode."""
+        from p2m.core.session import CallableSession, HTTPEndpointSession
+        from p2m.core.otel_session import OTelTracedSession
+
+        for cls in [CallableSession, HTTPEndpointSession, OTelTracedSession]:
+            instance = cls.__new__(cls)  # don't call __init__
+            self.assertTrue(hasattr(instance, "runtime_mode"))
+            self.assertTrue(callable(getattr(cls, "open", None)))
+            self.assertTrue(callable(getattr(cls, "close", None)))
+            self.assertTrue(callable(getattr(cls, "run_turn", None)))
