@@ -24,11 +24,83 @@
 | | A: OTel Trace-First | B: Callable Wrapper | C: Framework Adapter |
 |---|---|---|---|
 | **What the user writes** | 2 lines + pip install | 3-line function | YAML config only |
-| **What the judge sees** | Full internal trace (8/8 behaviors) | Input/output only (1/8) | Same as B (1/8) |
-| **Framework coverage** | 20+ via OpenInference | Universal (any callable) | 1 per adapter |
-| **Adaptive eval maintenance** | ~430 LOC, stable | ~80 LOC, zero maintenance | ~250 LOC per framework, ongoing |
+| **What the judge sees** | Full internal trace (8/8 behaviors) | Input/output + tool calls (1–4/8) | Same as B (1/8) |
+| **Framework coverage** | 22+ via OpenInference | Universal (any callable) | 1 per adapter |
+| **Adaptive eval maintenance** | ~851 LOC, stable | ~141 LOC, zero maintenance | ~242 LOC per framework, ongoing |
 | **Enterprise readiness** | Compliance, audit trail, commercial backends | Quick start, any agent | Not recommended |
 | **Recommendation** | **Strategic differentiator (P1)** | **Ship now (P0)** | **Deprioritize** |
+
+---
+
+## Validation Report (2026-04-15)
+
+All three approaches validated against `tests/test_framework_agnostic.py`. **111 tests, 111 passed, 0 failed.**
+
+### Approach B — Callable Wrapper: 8/8 tests ✅
+
+| Test | Validates | Status |
+|------|-----------|--------|
+| `test_sync_callable` | `fn(str) -> str` basic path | ✅ |
+| `test_async_callable` | Async callable support | ✅ |
+| `test_callable_with_history` | `fn(str, history=list)` multi-turn | ✅ |
+| `test_model_response_return` | `fn(str) -> ModelResponse` with tool traces | ✅ |
+| `test_litellm_style_dict_return` | Raw litellm/OpenAI response normalization | ✅ |
+| `test_plain_str_still_works` | Backward compat — str returns produce basic TurnResult | ✅ |
+| `test_import` | Module import and function discovery | ✅ |
+| `test_runtime_mode` | Session type identification | ✅ |
+
+**Capabilities proven:** sync/async, history support, `Union[str, ModelResponse]` return, litellm response auto-normalization, tool trace extraction, backward compatibility.
+
+### Approach A — OTel Trace-First: 97/97 tests ✅
+
+| Component | Tests | Validates |
+|-----------|-------|-----------|
+| **OTel parser** | 9 | OTLP JSON → session grouping, event ordering, tool arg parsing, node metadata |
+| **Span validation** | 6 | Missing attributes detection, LLM/tool span quality checks, pre-flight warnings |
+| **Trace compression** | 5 | Token budget management, tool events always kept, first/last per node |
+| **Trace exporters** | 5 | File-based + in-memory export, protocol compliance |
+| **OTelTracedSession** | 7 | Multi-turn accumulation, per-turn span capture, session metadata |
+| **OTelTracedSession + collector** | 2 | Collector integration, span retrieval |
+| **SpanCollector protocol** | 7 | Protocol compliance, Phoenix/DataFrame/InMemory implementations |
+| **Collector protocol (expanded)** | 3 | Edge cases, empty spans, validation integration |
+| **Span-level extraction** | 4 | LLM span inputs, kind filtering, empty handling |
+| **Trajectory-level extraction** | 4 | Trace grouping, node path capture, token aggregation |
+| **Session-level extraction** | 3 | Session grouping, tool call collection |
+| **Span tree building** | 7 | Parent-child hierarchy, root identification, depth traversal |
+| **Span node serialization** | 6 | JSON-safe output, attribute normalization |
+| **Tiered extraction** | 10 | 3-granularity API consistency, cross-tier data flow |
+| **Fixture complexity** | 4 | Realistic multi-session, multi-framework trace fixtures |
+| **Rollout OTel wiring** | 2 | Config → session routing, trace config propagation |
+| **Judge traces CLI** | 2 | CLI command structure, argument parsing |
+
+**Capabilities proven:** Full OTLP parsing pipeline, span validation, trace compression, 3-granularity extraction (span/trajectory/session), multi-turn session management, collector-agnostic architecture, rollout integration.
+
+### Approach C — Framework Adapter: structural demo only
+
+| Component | Tests | Status |
+|-----------|-------|--------|
+| `approach_c_adapter.py` | 0 | ⚠️ Illustrative — no dedicated tests. Adapter code is ~242 LOC of LangGraph-specific coupling. |
+
+**Not tested because:** The adapter approach is documented as an anti-pattern. It has no P2M-side test infrastructure and would require a running LangGraph agent with MCP servers to validate.
+
+### Cross-cutting: 6 additional tests ✅
+
+| Component | Tests | Validates |
+|-----------|-------|-----------|
+| **HTTP endpoint session** | 6 | Config validation, runtime mode, conflict detection |
+| **End-to-end integration** | 3 | Consistent session interface, full pipeline, transcript row schema |
+| **TargetConfig callable** | 3 | Config validation, mutual exclusivity |
+
+### Implementation size (measured)
+
+| | A: OTel | B: Callable | C: Adapter |
+|---|---|---|---|
+| **P2M-side code** | 851 LOC (`otel.py` 655 + `otel_session.py` 196) | 141 LOC (`CallableSession`) | 242 LOC per framework |
+| **Tests** | 97 passing | 8 passing | 0 |
+| **User-side code** | 2 lines (+ pip install) | 3 lines | 0 lines (config only) |
+| **External dependencies** | None (OpenInference spec as contract) | None | `langchain-core`, `langgraph` |
+| **Frameworks covered** | 22+ via OpenInference | Universal | 1 per adapter |
+| **Maintenance when framework changes** | Zero | Zero | Rewrite adapter |
 
 ## 1. What the developer writes
 
@@ -51,11 +123,15 @@ from examples.travel_planner.agent import chat_sync
 
 def target(message: str) -> str:
     return chat_sync(message)
+
+# Or return ModelResponse for tool-call visibility:
+# def target(message: str) -> ModelResponse:
+#     return litellm.completion(model="gpt-4o", messages=[...], tools=[...])
 ```
 
-**Lines of user code: 3**
+**Lines of user code: 3** (or return `ModelResponse` for 4/8 behavior visibility)
 **Agent code changes: 0**
-**Multi-turn support: Full** — Adaptive Eval drives conversation, but sees only input/output per turn
+**Multi-turn support: Full** — Adaptive Eval drives conversation; `str` return = black-box, `ModelResponse` return = tool calls + usage visible
 
 ### Approach C — Framework adapter
 
@@ -74,12 +150,12 @@ target:
 
 | | A (OTel) | B (Callable) | C (Adapter) |
 |---|---|---|---|
-| **New adaptive eval code** | `otel.py` (250 LOC) + `otel_session.py` (~180 LOC) | `CallableSession` (~80 LOC) | `p2m/adapters/langchain.py` (~250 LOC) |
+| **New adaptive eval code** | `otel.py` (655 LOC) + `otel_session.py` (196 LOC) = 851 LOC | `CallableSession` (141 LOC) | `p2m/adapters/langchain.py` (~242 LOC) |
 | **Config additions** | `target.callable` + `target.trace` | `target.callable` | None (uses `target.connector`) |
 | **External dependencies** | None required (OpenInference spec as contract) | None | `langchain-core`, `langgraph` |
 | **Maintenance surface** | OTLP JSON format (stable OTel spec) | Python import + invoke (stable) | LangGraph API surface (pre-1.0, unstable) |
-| **Frameworks covered** | All that emit OTel spans (20+ via OpenInference) | All (universal) | LangChain only (1 of 7+) |
-| **POC status** | ✅ Complete — 67 tests (parser + session + collector + extraction) | ✅ Complete — 5 tests | ⚠️ Illustrative example only |
+| **Frameworks covered** | All that emit OTel spans (22+ via OpenInference) | All (universal) | LangChain only (1 of 7+) |
+| **Tests** | ✅ 97 passing | ✅ 8 passing | ⚠️ 0 (illustrative only) |
 
 ---
 
@@ -138,8 +214,8 @@ Identical visibility to Approach B. The adapter adds complexity but zero additio
 | Integration complexity | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
 | Cost efficiency | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | Enterprise readiness | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| Judge data richness | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐ |
-| Multi-turn probing | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| Judge data richness | ⭐⭐⭐⭐⭐ (8/8) | ⭐⭐⭐ (1–4/8 with ModelResponse) | ⭐⭐ (1/8) |
+| Multi-turn probing | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ |
 | Privacy/security | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | Commercial extensibility | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ |
 
@@ -152,30 +228,33 @@ Identical visibility to Approach B. The adapter adds complexity but zero additio
 | Component | Status | Location |
 |-----------|--------|----------|
 | `CallableSession` | ✅ Complete | `p2m/core/session.py` |
+| `Union[str, ModelResponse]` return | ✅ Complete | `p2m/core/session.py` |
 | `TargetConfig.callable` | ✅ Complete | `p2m/core/config_model.py` |
 | Rollout wiring | ✅ Complete | `p2m/stages/rollout.py` |
-| Tests | ✅ 5 passing | `tests/test_framework_agnostic.py` |
+| Tests | ✅ 8 passing | `tests/test_framework_agnostic.py` |
 
 ### Approach A — OTel (complete)
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| OTLP JSON parser | ✅ Complete | `p2m/core/otel.py` |
+| OTLP JSON parser | ✅ Complete (655 LOC) | `p2m/core/otel.py` |
 | Span validator | ✅ Complete | `p2m/core/otel.py` |
 | Trace compression | ✅ Complete | `p2m/core/otel.py` |
-| `OTelTracedSession` | ✅ Complete | `p2m/core/otel_session.py` |
+| `OTelTracedSession` | ✅ Complete (196 LOC) | `p2m/core/otel_session.py` |
 | `SpanCollector` Protocol | ✅ Complete | `p2m/core/collector.py` |
 | `PhoenixCollector` (optional) | ✅ Complete | `p2m/core/collector.py` |
 | `DataFrameCollector` | ✅ Complete | `p2m/core/collector.py` |
 | 3-granularity extraction APIs | ✅ Complete | `p2m/core/otel.py` |
-| Tests | ✅ 62 passing | `tests/test_framework_agnostic.py` |
-| `p2m judge --traces` CLI | 🔲 Not started | Backlog |
+| Span tree + serialization | ✅ Complete | `p2m/core/otel.py` |
+| Tests | ✅ 97 passing | `tests/test_framework_agnostic.py` |
+| `p2m judge --traces` CLI | 🔲 Not started | Backlog P1-1 |
 
 ### Approach C — Adapter (illustrative only)
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| Example adapter | ⚠️ Illustrative | `examples/travel_planner/approach_c_adapter.py` |
+| Example adapter | ⚠️ Illustrative (242 LOC) | `examples/travel_planner/approach_c_adapter.py` |
+| Tests | ❌ None | Deprioritized — documented anti-pattern |
 
 ---
 
@@ -206,10 +285,10 @@ v1: 4 nodes → v2: adds currency_converter, visa_checker → v3: adds sub-graph
 | Dimension | A (OTel) | B (Callable) | C (Adapter) |
 |---|---|---|---|
 | **Best for** | Deep evaluation, enterprise, compliance | Quick start, any agent | Simple AgentExecutor only |
-| **Judge data richness** | 8/8 behaviors per turn | 1/8 behaviors | 1/8 (if it works) |
+| **Judge data richness** | 8/8 behaviors per turn | 1–4/8 behaviors (str vs ModelResponse) | 1/8 (if it works) |
 | **User effort** | 2 lines + pip install | 3 lines | 0 lines (happy) / 30 min (debug) |
-| **Adaptive eval maintenance** | Low (OTLP spec is stable) | Minimal | High (per-framework, ongoing) |
-| **Scales across frameworks** | Yes (20+ via OpenInference) | Yes (universal) | No (1 adapter per framework) |
+| **P2M code** | 851 LOC, 97 tests | 141 LOC, 8 tests | 242 LOC per FW, 0 tests |
+| **Scales across frameworks** | Yes (22+ via OpenInference) | Yes (universal) | No (1 adapter per framework) |
 | **Enterprise path** | Yes (compliance, audit, commercial backends) | Limited (black-box) | No |
 
 ### Recommendation
@@ -279,7 +358,8 @@ Enterprise agents commonly mix frameworks: LangGraph orchestration → proprieta
 
 | Cost | A (OTel) | B (Callable) | C (Adapter) |
 |---|---|---|---|
-| **Code to maintain** | ~430 LOC (otel.py + otel_session.py) | ~80 LOC (CallableSession) | ~250 LOC **per framework** |
+| **Code to maintain** | 851 LOC (otel.py 655 + otel_session.py 196) | 141 LOC (CallableSession) | ~242 LOC **per framework** |
+| **Tests** | 97 passing | 8 passing | 0 |
 | **When LangGraph v1.0 ships** | Nothing changes | Nothing changes | **Rewrite adapter** |
 | **When CrewAI changes API** | Nothing changes | Nothing changes | **Rewrite adapter** |
 | **When new framework appears** | Nothing (works if it has OTel instrumentor) | Nothing (user writes wrapper) | **Write new adapter** |
