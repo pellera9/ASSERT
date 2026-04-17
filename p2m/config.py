@@ -24,6 +24,7 @@ from p2m.core.config_model import (
     RolloutConfig,
     TargetConfig,
     ToolsConfig,
+    TraceConfig,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -337,11 +338,20 @@ def parse_tools_config(raw: dict[str, Any], *, field_name: str) -> ToolsConfig:
 def parse_target_config(raw: dict[str, Any], *, field_name: str) -> TargetConfig:
     if not isinstance(raw, dict):
         raise ValueError(f"{field_name} must be a mapping")
-    _reject_unknown_keys(raw, field_name=field_name, allowed={"model", "system_prompt", "tools", "connector"})
+    _reject_unknown_keys(raw, field_name=field_name, allowed={"model", "system_prompt", "tools", "connector", "callable", "endpoint", "trace"})
     tools_raw = raw.get("tools")
     tools = None
     if tools_raw is not None:
         tools = parse_tools_config(tools_raw, field_name=f"{field_name}.tools")
+    trace_raw = raw.get("trace")
+    trace = None
+    if trace_raw is not None:
+        if not isinstance(trace_raw, dict):
+            raise ValueError(f"{field_name}.trace must be a mapping")
+        trace = TraceConfig(
+            backend=trace_raw.get("backend", "phoenix"),
+            group_by=trace_raw.get("group_by", "session.id"),
+        )
     return TargetConfig(
         model=(
             parse_model_config(
@@ -356,6 +366,9 @@ def parse_target_config(raw: dict[str, Any], *, field_name: str) -> TargetConfig
         system_prompt=_optional_str(raw.get("system_prompt"), field_name=f"{field_name}.system_prompt"),
         tools=tools,
         connector=_optional_str(raw.get("connector"), field_name=f"{field_name}.connector"),
+        callable=_optional_str(raw.get("callable"), field_name=f"{field_name}.callable"),
+        endpoint=_optional_str(raw.get("endpoint"), field_name=f"{field_name}.endpoint"),
+        trace=trace,
     )
 
 

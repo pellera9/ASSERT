@@ -499,7 +499,7 @@ async def _run_prompt_seed(
         max_tokens=max_tokens,
         config_path=config_path,
     )
-    target_id = str(target.model.name) if target.model else (target.connector or "")
+    target_id = str(target.model.name) if target.model else (target.connector or target.callable or target.endpoint or "")
     transcript = Transcript(
         metadata=TranscriptMetadata(
             kind="prompt",
@@ -724,7 +724,7 @@ async def _run_scenario_seed(
             risk=str(seed.get("risk") or ""),
             sub_risk=str(seed.get("sub_risk") or ""),
             permissible=get_permissible_flag(seed, default=True),
-            target=str(target.model.name) if target.model else (target.connector or ""),
+            target=str(target.model.name) if target.model else (target.connector or target.callable or target.endpoint or ""),
             auditor_model=str(auditor.model.name),
         )
     )
@@ -791,8 +791,8 @@ async def run_rollout(
     strict: bool = False,
 ) -> dict[str, Any]:
     """Run all seed rollouts and write the transcript artifact."""
-    if not target.model and not target.connector:
-        raise ValueError("rollout requires target.model or target.connector")
+    if not target.model and not target.connector and not target.callable and not target.endpoint:
+        raise ValueError("rollout requires target.model, target.connector, target.callable, or target.endpoint")
 
     tool_source = _infer_tool_source(target)
 

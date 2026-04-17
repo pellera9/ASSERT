@@ -21,14 +21,17 @@
 
 ## Summary
 
+**Market context:** [76-80% of 3P customers use orchestration frameworks](https://microsoft.sharepoint.com/:p:/s/AIStudioUX/IQAE4jFJUyccQJcjYsYyTvn8AeXPjwAzut6OUlx2YyTjJTY), not prompt agents. Only ~20% are direct model users or custom/bespoke agents without a framework. The callable wrapper (`fn(str) -> str`) is the natural fit for that ~20%; for the other ~80%, it asks framework users to strip away their framework's output schema and return a lossy `str` — technically universal, but practically a 1/8-visibility black box for the majority of the market.
+
 | | A: OTel Trace-First | B: Callable Wrapper | C: Framework Adapter |
 |---|---|---|---|
 | **What the user writes** | 2 lines + pip install | 3-line function | YAML config only |
-| **What the judge sees** | Full internal trace (8/8 behaviors) | Input/output + tool calls (1–4/8) | Same as B (1/8) |
-| **Framework coverage** | 22+ via OpenInference | Universal (any callable) | 1 per adapter |
-| **Adaptive eval maintenance** | ~851 LOC, stable | ~141 LOC, zero maintenance | ~242 LOC per framework, ongoing |
-| **Enterprise readiness** | Compliance, audit trail, commercial backends | Quick start, any agent | Not recommended |
-| **Recommendation** | **Strategic differentiator (P1)** | **Ship now (P0)** | **Deprioritize** |
+| **What the judge sees** | Full internal trace (8/8 behaviors) | Input/output only (1–4/8) | Same as B (1/8) |
+| **Framework coverage** | 22+ via OpenInference | Technically universal, but lossy for framework agents (~80% of market) | 1 per adapter |
+| **Natural fit for** | Framework-based agent builders (~80%) | Direct model users + custom/bespoke agents (~20%) | Not recommended |
+| **Adaptive eval maintenance** | ~851 LOC, stable | ~141 LOC, zero maintenance | ~242 LOC **per framework, ongoing** |
+| **Enterprise readiness** | Compliance, audit trail, commercial backends | Quick start for prompt agents | Not recommended |
+| **Recommendation** | **Strategic differentiator — serves 80% of market (P1)** | **Quick start — natural fit for ~20% of market (P0)** | **Deprioritize** |
 
 ---
 
@@ -99,8 +102,9 @@ All three approaches validated against `tests/test_framework_agnostic.py`. **111
 | **Tests** | 97 passing | 8 passing | 0 |
 | **User-side code** | 2 lines (+ pip install) | 3 lines | 0 lines (config only) |
 | **External dependencies** | None (OpenInference spec as contract) | None | `langchain-core`, `langgraph` |
-| **Frameworks covered** | 22+ via OpenInference | Universal | 1 per adapter |
+| **Frameworks covered** | 22+ via OpenInference | Technically universal (but 1/8 quality for framework agents) | 1 per adapter |
 | **Maintenance when framework changes** | Zero | Zero | Rewrite adapter |
+| **Market fit** | ~80% (framework-based agent builders) | ~20% (direct model + custom/bespoke) | <5% (single-framework happy path) |
 
 ## 1. What the developer writes
 
@@ -132,6 +136,7 @@ def target(message: str) -> str:
 **Lines of user code: 3** (or return `ModelResponse` for 4/8 behavior visibility)
 **Agent code changes: 0**
 **Multi-turn support: Full** — Adaptive Eval drives conversation; `str` return = black-box, `ModelResponse` return = tool calls + usage visible
+**Natural fit for:** Direct model API users and custom/bespoke agents (~20% of market). Framework users (LangGraph, CrewAI, SK) must discard their framework's native output schema to return a plain `str` — a lossy adapter that strips tool calls, routing decisions, and intermediate state.
 
 ### Approach C — Framework adapter
 
@@ -204,20 +209,24 @@ Identical visibility to Approach B. The adapter adds complexity but zero additio
 
 ## 4. Summary scorecard
 
+**Reading guide:** Stars reflect real-world developer experience weighted by market segments. [76-80% of 3P customers use orchestration frameworks](https://microsoft.sharepoint.com/:p:/s/AIStudioUX/IQAE4jFJUyccQJcjYsYyTvn8AeXPjwAzut6OUlx2YyTjJTY); only ~20% are direct model / custom bespoke agents. The callable wrapper is a natural fit for the ~20% segment but asks the ~80% to write a lossy adapter around their framework's native output schema.
+
 | Dimension | A (OTel) | B (Callable) | C (Adapter) |
 |---|---|---|---|
-| Ease of use | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
-| Time to value | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
-| Framework scalability | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ |
-| Custom/proprietary | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ |
-| Maintenance cost | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ |
-| Integration complexity | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
+| Ease of use — direct model / custom agents (~20%) | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
+| Ease of use — framework agents (~80%) | ⭐⭐⭐⭐ | ⭐⭐ (lossy wrapper) | ⭐⭐⭐ |
+| Time to value — first eval | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
+| Framework scalability | ⭐⭐⭐⭐⭐ | ⭐⭐ (technically works, 1/8 quality) | ⭐ |
+| Custom/proprietary agents | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ |
+| Maintenance cost (us) | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ |
+| Integration complexity | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ (for ~20%) / ⭐⭐⭐ (for ~80%) | ⭐⭐ |
 | Cost efficiency | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | Enterprise readiness | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| Judge data richness | ⭐⭐⭐⭐⭐ (8/8) | ⭐⭐⭐ (1–4/8 with ModelResponse) | ⭐⭐ (1/8) |
+| Judge data richness | ⭐⭐⭐⭐⭐ (8/8) | ⭐⭐ (1/8 str, 4/8 ModelResponse) | ⭐⭐ (1/8) |
 | Multi-turn probing | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ |
 | Privacy/security | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | Commercial extensibility | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ |
+| **Addressable market fit** | **~80% (framework agents)** | **~20% (direct model + custom)** | **<5% (single-framework happy path)** |
 
 ---
 
@@ -278,24 +287,32 @@ v1: 4 nodes → v2: adds currency_converter, visa_checker → v3: adds sub-graph
 
 ## 7. Verdict
 
+### The callable misfit problem
+
+The callable wrapper is technically universal — any agent CAN be wrapped in `fn(str) -> str`. But "technically works" ≠ "serves the user well":
+
+- **~80% of our addressable market uses orchestration frameworks** ([internal UXR: 76-80%](https://microsoft.sharepoint.com/:p:/s/AIStudioUX/IQAE4jFJUyccQJcjYsYyTvn8AeXPjwAzut6OUlx2YyTjJTY); [LangChain report: ~86% use frameworks](https://www.langchain.com/state-of-agent-engineering)). These developers work with framework-specific output schemas (LangGraph's `dict`, CrewAI's `CrewOutput`, SK's `FunctionResult`) that don't map naturally to `str | ModelResponse`.
+- **Asking framework users to re-engineer a lossy wrapper** strips away tool calls, routing decisions, intermediate reasoning — exactly the data needed for meaningful behavioral evaluation. The result is 1/8 eval quality for 80% of users.
+- **The ~20% where callable is the natural fit** — direct model API users (~5-10%) and custom/bespoke agents without frameworks (~14%, per [LangChain State of Agent Engineering 2025](https://www.langchain.com/state-of-agent-engineering)) — are genuinely well-served. For them, `fn(str) -> str` matches their existing code shape.
+
 ### The strategic bet
 
-**Ship B (callable) as the universal entry point. Ship A (OTel) as the strategic differentiator. Deprioritize C (adapters).**
+**Ship B (callable) as the quick-start entry point for the ~20% where it's a natural fit. Ship A (OTel) as the primary integration for the ~80% framework-agent majority. Deprioritize C (adapters).**
 
 | Dimension | A (OTel) | B (Callable) | C (Adapter) |
 |---|---|---|---|
-| **Best for** | Deep evaluation, enterprise, compliance | Quick start, any agent | Simple AgentExecutor only |
+| **Best for** | Framework-based agents (~80% of market), enterprise, compliance | Direct model users + custom agents (~20%) | Simple AgentExecutor only |
 | **Judge data richness** | 8/8 behaviors per turn | 1–4/8 behaviors (str vs ModelResponse) | 1/8 (if it works) |
 | **User effort** | 2 lines + pip install | 3 lines | 0 lines (happy) / 30 min (debug) |
 | **P2M code** | 851 LOC, 97 tests | 141 LOC, 8 tests | 242 LOC per FW, 0 tests |
-| **Scales across frameworks** | Yes (22+ via OpenInference) | Yes (universal) | No (1 adapter per framework) |
+| **Scales across frameworks** | Yes (22+ via OpenInference) | Technically yes, but lossy | No (1 adapter per framework) |
 | **Enterprise path** | Yes (compliance, audit, commercial backends) | Limited (black-box) | No |
 
 ### Recommendation
 
-1. **Ship B now (P0).** `target.callable` is production-ready. Universal, zero-risk, zero dependencies. Every agent can be evaluated in 5 minutes. Black-box visibility is the trade-off — acceptable for initial adoption.
+1. **Ship B now (P0) — but scope it honestly.** `target.callable` is production-ready and zero-risk. It's the right entry point for direct model users and custom agents (~20% of market). Don't oversell it as "universal" — for framework agents, it delivers 1/8 eval quality.
 
-2. **Ship A next (P1).** The quality jump from 1/8 to 8/8 evaluable behaviors per turn is the single biggest improvement on the roadmap. Multi-turn trace visibility enables root-cause analysis that no competitor offers. Enterprise customers need the audit trail.
+2. **Ship A next (P1) — this is the real product.** OTel trace import is the integration that matches how ~80% of our users actually build agents. The quality jump from 1/8 to 8/8 evaluable behaviors is the single biggest improvement on the roadmap. The [89% observability adoption rate](https://www.langchain.com/state-of-agent-engineering) vs 52% running evals means most users are one step away from OTel instrumentation — the gap between "has traces" and "runs evals" is where we insert.
 
 3. **Do not invest in C.** The adapter approach provides zero visibility advantage over callable, breaks on every framework change, and creates permanent maintenance burden. The existing `target.connector` protocol remains available for teams that want custom deep integration.
 
@@ -308,6 +325,16 @@ Adaptive Eval is the only eval tool that combines:
 - **Structured behavior evaluation** — judge evaluates against specific behavior definitions with evidence
 
 Phoenix does trace-then-evaluate (passive). Promptfoo does static red teaming (generic). InspectAI does solver-based benchmarks (academic). None of them do requirement-driven adversarial multi-turn evaluation with internal trace visibility.
+
+### Why B alone is not enough
+
+The callable wrapper provides a low-friction on-ramp, but it cannot deliver the competitive moat above. Without OTel traces:
+- The judge cannot see **which agent node** caused a violation — only that the final output was bad
+- Root-cause analysis is impossible — "agent gave dosage advice" vs "medication_advisor node activated because intent_classifier misrouted"
+- Multi-turn trajectory analysis degrades to surface-level output comparison
+- Enterprise compliance requires provable evidence of agent behavior, not black-box pass/fail
+
+For the ~80% of users who build with frameworks, OTel trace import is not a "nice to have" — it's the difference between a toy eval and a production-grade evaluation system.
 
 ---
 
