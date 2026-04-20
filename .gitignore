@@ -5,11 +5,13 @@
 # Python artifacts
 __pycache__/
 *.pyc
+*.egg-info/
 
 # Inspect / run outputs
 logs/
 plots/
 artifacts/
+*.log
 
 # Do not ignore SvelteKit route folders named "logs"
 !viewer/src/routes/**/logs/

@@ -16,7 +16,8 @@ factors:
     description: The kind of medical task or request.
 
 default_model:
-  name: azure/gpt-5.4-mini
+  name: azure/gpt-5.4
+  max_tokens: 32000
 
 pipeline:
   policy:

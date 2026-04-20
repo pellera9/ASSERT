@@ -18,6 +18,9 @@ GEN_PROMPT = (BASE_DIR / "prompts" / "policy_system.md").read_text()
 DEFAULT_BEHAVIOR_COUNT = 25
 MIN_POLICY_BEHAVIORS = 5
 
+SCOPE = "suite"
+SUITE_OUTPUT = "policy.json"
+
 
 def policy_schema(*, min_behaviors: int = 0) -> Dict[str, Any]:
     """JSON schema for a risk policy with behaviors and term definitions."""
