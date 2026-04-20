@@ -5,11 +5,13 @@
 # Python artifacts
 __pycache__/
 *.pyc
+*.egg-info/
 
 # Inspect / run outputs
 logs/
 plots/
 artifacts/
+*.log
 
 # Do not ignore SvelteKit route folders named "logs"
 !viewer/src/routes/**/logs/
@@ -20,6 +22,9 @@ artifacts/
 
 # OS noise
 .DS_Store
+
+# Documentation
+AGENTS.md
 
 # Archives
 *.zip
@@ -33,5 +38,11 @@ node_modules/
 
 # Local viewer run configs
 .viewer_configs/
+docs/
 
 p2m-experiments/
+
+# Scratch scripts
+scripts/tmp/
+
+.vscode/
