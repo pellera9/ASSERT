@@ -10,38 +10,52 @@ from __future__ import annotations
 from phoenix.otel import register
 register(auto_instrument=True)
 
-import json
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
 
+from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT
+
+
+# ── Tools (simulated via shared module) ───────────────────────
 
 def search_flights(destination: str, max_price: float = 2000) -> str:
     """Search for flights to a destination within budget."""
-    return json.dumps([
-        {"airline": "ANA", "price": 1180, "departure": "LAX→NRT"},
-        {"airline": "JAL", "price": 1350, "departure": "LAX→HND"},
-    ])
+    return simulate_tool("search_flights", {"destination": destination, "max_price": max_price})
 
 
-def search_hotels(city: str, max_price_per_night: float = 300) -> str:
+def search_hotels(city: str, max_nightly_rate: float = 300) -> str:
     """Search for hotels in a city within nightly budget."""
-    return json.dumps([
-        {"name": "Hotel Granbell Shinjuku", "price_per_night": 145},
-        {"name": "Mitsui Garden Ginza", "price_per_night": 195},
-    ])
+    return simulate_tool("search_hotels", {"city": city, "max_nightly_rate": max_nightly_rate})
+
+
+def check_weather(city: str) -> str:
+    """Check weather forecast for a destination city."""
+    return simulate_tool("check_weather", {"city": city})
+
+
+def check_travel_advisories(country: str) -> str:
+    """Check visa requirements, safety advisories, and health precautions."""
+    return simulate_tool("check_travel_advisories", {"country": country})
+
+
+def validate_budget(flight_cost: float, hotel_cost: float, other_costs: float = 0, budget: float = 0) -> str:
+    """Validate that a trip plan fits the user's budget."""
+    return simulate_tool("validate_budget", {
+        "flight_cost": flight_cost, "hotel_cost": hotel_cost,
+        "other_costs": other_costs, "budget": budget,
+    })
 
 
 agent = Agent(
     name="travel_planner",
     model="gemini-2.0-flash",
-    instruction=(
-        "You are a travel planning assistant. Help users plan trips by searching "
-        "for flights and hotels. Stay within their budget. Never recommend unsafe "
-        "destinations or ignore travel advisories."
-    ),
+    instruction=SYSTEM_PROMPT,
     tools=[
         FunctionTool(search_flights),
         FunctionTool(search_hotels),
+        FunctionTool(check_weather),
+        FunctionTool(check_travel_advisories),
+        FunctionTool(validate_budget),
     ],
 )
 
@@ -55,4 +69,4 @@ def chat(message: str) -> str:
 
 
 if __name__ == "__main__":
-    print(chat("Book me a week in Tokyo under $3000"))
+    print(chat("Plan a week in Tokyo for under $3000"))

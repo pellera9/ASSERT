@@ -399,6 +399,47 @@ async def _run_sync_with_timeout(callable_obj: Any, *, timeout_s: float | None, 
     return await _await_with_timeout(task, timeout_s=timeout_s)
 
 
+# ── LiteLLM error classification ──────────────────────────────
+
+class LLMAuthError(Exception):
+    """Bad API key or credentials — not retryable."""
+
+class LLMInputError(Exception):
+    """Invalid request (prompt too long, bad params) — not retryable."""
+
+class LLMRateLimitError(Exception):
+    """Rate limited — retryable after backoff."""
+
+class LLMProviderError(Exception):
+    """Provider-side error (5xx) — may be retryable."""
+
+
+def _classify_llm_error(exc: Exception) -> Exception:
+    """Wrap litellm exceptions into categorized errors."""
+    litellm = _get_litellm_module()
+    if isinstance(exc, litellm.AuthenticationError):
+        err = LLMAuthError(f"Authentication failed: {exc}")
+        err.__cause__ = exc
+        return err
+    if isinstance(exc, litellm.RateLimitError):
+        err = LLMRateLimitError(f"Rate limited: {exc}")
+        err.__cause__ = exc
+        return err
+    if isinstance(exc, litellm.BadRequestError):
+        err = LLMInputError(f"Bad request: {exc}")
+        err.__cause__ = exc
+        return err
+    if isinstance(exc, litellm.NotFoundError):
+        err = LLMInputError(f"Model/deployment not found: {exc}")
+        err.__cause__ = exc
+        return err
+    if isinstance(exc, (litellm.APIError, litellm.APIConnectionError)):
+        err = LLMProviderError(f"Provider error: {exc}")
+        err.__cause__ = exc
+        return err
+    return exc
+
+
 def _first_choice(raw_response: Any) -> Any:
     choices = _get_value(raw_response, "choices")
     if isinstance(choices, Sequence) and not isinstance(choices, (str, bytes)) and choices:
@@ -496,6 +537,10 @@ __all__ = [
     "generate_structured",
     "generate_with_tools",
     "to_jsonable",
+    "LLMAuthError",
+    "LLMInputError",
+    "LLMRateLimitError",
+    "LLMProviderError",
 ]
 
 
@@ -507,27 +552,30 @@ async def generate(
     """Run a standard async text generation call."""
     resolved_options = options or GenerateOptions()
     litellm = _get_litellm_module()
-    if resolved_options.web_search:
-        payload = _build_responses_payload(model, messages, resolved_options)
-        payload["tools"] = [{"type": "web_search_preview"}]
-        responses_client, is_async = _responses_client(litellm)
-        if is_async:
-            raw_response = await _await_with_timeout(
-                responses_client(**payload),
-                timeout_s=resolved_options.timeout_s,
-            )
+    try:
+        if resolved_options.web_search:
+            payload = _build_responses_payload(model, messages, resolved_options)
+            payload["tools"] = [{"type": "web_search_preview"}]
+            responses_client, is_async = _responses_client(litellm)
+            if is_async:
+                raw_response = await _await_with_timeout(
+                    responses_client(**payload),
+                    timeout_s=resolved_options.timeout_s,
+                )
+            else:
+                raw_response = await _run_sync_with_timeout(
+                    responses_client,
+                    timeout_s=resolved_options.timeout_s,
+                    **payload,
+                )
         else:
-            raw_response = await _run_sync_with_timeout(
-                responses_client,
+            payload = _build_chat_payload(model, messages, resolved_options)
+            raw_response = await _await_with_timeout(
+                litellm.acompletion(**payload),
                 timeout_s=resolved_options.timeout_s,
-                **payload,
             )
-    else:
-        payload = _build_chat_payload(model, messages, resolved_options)
-        raw_response = await _await_with_timeout(
-            litellm.acompletion(**payload),
-            timeout_s=resolved_options.timeout_s,
-        )
+    except Exception as exc:
+        raise _classify_llm_error(exc) from exc
     return normalize_response(
         raw_response,
         api_mode="responses" if resolved_options.web_search else "chat_completion",
@@ -546,37 +594,40 @@ async def generate_structured(
     """Run a structured generation call constrained by a JSON schema."""
     resolved_options = options or GenerateOptions()
     litellm = _get_litellm_module()
-    if resolved_options.web_search:
-        payload = _build_responses_payload(model, messages, resolved_options)
-        payload["tools"] = [{"type": "web_search_preview"}]
-        payload["text"] = {
-            "format": build_json_schema_text_format(
+    try:
+        if resolved_options.web_search:
+            payload = _build_responses_payload(model, messages, resolved_options)
+            payload["tools"] = [{"type": "web_search_preview"}]
+            payload["text"] = {
+                "format": build_json_schema_text_format(
+                    schema_name,
+                    json_schema,
+                )
+            }
+            responses_client, is_async = _responses_client(litellm)
+            if is_async:
+                raw_response = await _await_with_timeout(
+                    responses_client(**payload),
+                    timeout_s=resolved_options.timeout_s,
+                )
+            else:
+                raw_response = await _run_sync_with_timeout(
+                    responses_client,
+                    timeout_s=resolved_options.timeout_s,
+                    **payload,
+                )
+        else:
+            payload = _build_chat_payload(model, messages, resolved_options)
+            payload["response_format"] = build_json_schema_response_format(
                 schema_name,
                 json_schema,
             )
-        }
-        responses_client, is_async = _responses_client(litellm)
-        if is_async:
             raw_response = await _await_with_timeout(
-                responses_client(**payload),
+                litellm.acompletion(**payload),
                 timeout_s=resolved_options.timeout_s,
             )
-        else:
-            raw_response = await _run_sync_with_timeout(
-                responses_client,
-                timeout_s=resolved_options.timeout_s,
-                **payload,
-            )
-    else:
-        payload = _build_chat_payload(model, messages, resolved_options)
-        payload["response_format"] = build_json_schema_response_format(
-            schema_name,
-            json_schema,
-        )
-        raw_response = await _await_with_timeout(
-            litellm.acompletion(**payload),
-            timeout_s=resolved_options.timeout_s,
-        )
+    except Exception as exc:
+        raise _classify_llm_error(exc) from exc
     return normalize_response(
         raw_response,
         api_mode="responses" if resolved_options.web_search else "chat_completion",
@@ -599,10 +650,13 @@ async def generate_with_tools(
         payload["tool_choice"] = resolved_options.tool_choice
 
     litellm = _get_litellm_module()
-    raw_response = await _await_with_timeout(
-        litellm.acompletion(**payload),
-        timeout_s=resolved_options.timeout_s,
-    )
+    try:
+        raw_response = await _await_with_timeout(
+            litellm.acompletion(**payload),
+            timeout_s=resolved_options.timeout_s,
+        )
+    except Exception as exc:
+        raise _classify_llm_error(exc) from exc
     return normalize_response(
         raw_response,
         api_mode="chat_completion",

@@ -71,10 +71,10 @@ class OTelTracedSession:
         system_prompt: str | None = None,
         message_timeout_s: float | None = None,
         max_events_per_turn: int = 50,
+        live_otel: bool = False,
     ) -> None:
         self._callable_ref = callable_ref
         self._collector = collector
-        self._exporter = exporter or InMemoryTraceExporter()
         self._group_by = group_by
         self._system_prompt = system_prompt
         self._message_timeout_s = message_timeout_s
@@ -83,6 +83,15 @@ class OTelTracedSession:
         self._supports_history = False
         self._session_id = ""
         self._turn_traces: list[dict[str, Any]] = []
+        self._live_otel = live_otel
+
+        if live_otel:
+            from p2m.core.otel import LiveOTelExporter
+            self._live_exporter = LiveOTelExporter()
+            self._exporter = self._live_exporter
+        else:
+            self._live_exporter = None
+            self._exporter = exporter or InMemoryTraceExporter()
 
     @property
     def runtime_mode(self) -> str:
@@ -104,6 +113,8 @@ class OTelTracedSession:
         self._supports_history = "history" in sig.parameters
         self._session_id = uuid.uuid4().hex[:12]
         self._turn_traces = []
+        if self._live_exporter is not None:
+            self._live_exporter.setup()
 
     async def close(self) -> None:
         self._callable = None
@@ -111,6 +122,10 @@ class OTelTracedSession:
 
     async def run_turn(self, messages: list[Message]) -> TurnResult:
         """Execute one turn: invoke target, capture traces, return rich result."""
+        # Clear spans from previous turn so we only capture this turn's execution
+        if self._live_exporter is not None:
+            self._live_exporter.clear()
+
         user_text = ""
         for msg in reversed(messages):
             if msg.role == "user":

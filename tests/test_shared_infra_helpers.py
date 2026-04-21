@@ -404,9 +404,17 @@ class SharedInfraHelpersTest(unittest.IsolatedAsyncioTestCase):
             schema_name="xml_judgment",
         )
 
-        node_schema = contract["response_schema"]["json_schema"]["properties"]["node_judgments"]
-        self.assertEqual(node_schema["maxItems"], 3)
-        self.assertEqual(node_schema["items"]["properties"]["node_index"]["maximum"], 2)
+        # Schema should have node_judgments as an array (strict-mode: no maxItems/maximum)
+        schema = contract["response_schema"]["json_schema"]
+        node_schema = schema["properties"]["node_judgments"]
+        self.assertEqual(node_schema["type"], "array")
+        self.assertNotIn("maxItems", node_schema)  # removed for strict-mode compliance
+        self.assertEqual(node_schema["items"]["properties"]["node_index"]["type"], "integer")
+        self.assertNotIn("maximum", node_schema["items"]["properties"]["node_index"])
+
+        # Pydantic model should also be present
+        pydantic_model = contract["response_schema"].get("pydantic_model")
+        self.assertIsNotNone(pydantic_model)
 
     async def test_run_judge_returns_normalized_success_payload(self) -> None:
         async def fake_multi_judge(**kwargs):

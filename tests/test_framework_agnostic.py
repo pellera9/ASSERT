@@ -852,40 +852,44 @@ class TestSpanCollectorProtocol(unittest.TestCase):
         self.assertIsInstance(collector, SpanCollector)
 
     def test_dataframe_collector_get_spans(self):
-        from p2m.core.collector import DataFrameCollector
+        from p2m.core.collector import ListCollector
+        from p2m.core.otel import OTelSpan
 
-        sentinel = object()
-        collector = DataFrameCollector(sentinel)
-        self.assertIs(collector.get_spans("project"), sentinel)
-        self.assertIs(collector.get_spans(), sentinel)
+        span = OTelSpan(trace_id="t1", span_id="s1", parent_span_id=None,
+                        name="test", kind="LLM", start_time_ns=0, end_time_ns=1000)
+        collector = ListCollector([span])
+        result = collector.get_spans("project")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].name, "test")
 
     def test_dataframe_collector_validate_missing_columns(self):
-        from p2m.core.collector import DataFrameCollector, REQUIRED_COLUMNS
+        from p2m.core.collector import ListCollector
+        from p2m.core.otel import OTelSpan
 
-        class FakeDF:
-            columns = ["context.trace_id", "name"]
-
-        collector = DataFrameCollector(FakeDF())
-        warnings = collector.validate(FakeDF())
-        self.assertEqual(len(warnings), 1)
-        self.assertIn("Missing required columns", warnings[0])
+        span = OTelSpan(trace_id="t1", span_id="s1", parent_span_id=None,
+                        name="test", kind="UNKNOWN", start_time_ns=0, end_time_ns=1000)
+        collector = ListCollector([span])
+        warnings = collector.validate([span])
+        self.assertTrue(len(warnings) > 0)
+        self.assertIn("missing", warnings[0])
 
     def test_dataframe_collector_validate_all_present(self):
-        from p2m.core.collector import DataFrameCollector, REQUIRED_COLUMNS
+        from p2m.core.collector import ListCollector
+        from p2m.core.otel import OTelSpan
 
-        class FakeDF:
-            columns = list(REQUIRED_COLUMNS)
-
-        collector = DataFrameCollector(FakeDF())
-        warnings = collector.validate(FakeDF())
+        span = OTelSpan(trace_id="t1", span_id="s1", parent_span_id=None,
+                        name="test", kind="CHAIN", start_time_ns=0, end_time_ns=1000,
+                        attributes={"session.id": "sess1"})
+        collector = ListCollector([span])
+        warnings = collector.validate([span])
         self.assertEqual(warnings, [])
 
     def test_dataframe_collector_validate_non_dataframe(self):
-        from p2m.core.collector import DataFrameCollector
+        from p2m.core.collector import ListCollector
 
-        collector = DataFrameCollector("not a df")
-        warnings = collector.validate("not a df")
-        self.assertEqual(warnings, [])  # no columns attr → no check
+        collector = ListCollector([])
+        warnings = collector.validate([])
+        self.assertEqual(warnings, [])  # empty list → no warnings
 
     def test_phoenix_collector_import_error(self):
         from p2m.core.collector import PhoenixCollector
@@ -1642,14 +1646,16 @@ class TestCollectorProtocolExpanded(unittest.TestCase):
     """Expanded tests for SpanCollector Protocol — defensible architecture."""
 
     def test_dataframe_collector_validates_missing_columns(self):
-        import types
-        from p2m.core.collector import DataFrameCollector, REQUIRED_COLUMNS
-        # Create a minimal object with .columns attribute but missing required cols
-        fake_df = types.SimpleNamespace(columns=["some_col"])
-        collector = DataFrameCollector(fake_df)
-        warnings = collector.validate(fake_df)
+        from p2m.core.collector import ListCollector
+        from p2m.core.otel import OTelSpan
+
+        span = OTelSpan(trace_id="t1", span_id="s1", parent_span_id=None,
+                        name="test", kind="LLM", start_time_ns=0, end_time_ns=1000)
+        collector = ListCollector([span])
+        warnings = collector.validate([span])
         self.assertTrue(len(warnings) > 0)
-        self.assertIn("Missing", warnings[0])
+        # LLM span without output.value should warn
+        self.assertIn("missing", warnings[0].lower())
 
     def test_phoenix_collector_import_error(self):
         """PhoenixCollector should give clear error when phoenix not installed."""
@@ -1657,15 +1663,13 @@ class TestCollectorProtocolExpanded(unittest.TestCase):
         # Phoenix may or may not be installed — test the interface exists
         self.assertTrue(callable(PhoenixCollector))
 
-    def test_all_required_columns_are_openinference(self):
-        """REQUIRED_COLUMNS should only reference OpenInference conventions."""
-        from p2m.core.collector import REQUIRED_COLUMNS
-        STANDARD_OTEL_FIELDS = {"name", "parent_id", "start_time", "end_time"}
-        for col in REQUIRED_COLUMNS:
-            # All should be dot-separated attribute paths or standard OTel fields
+    def test_all_required_attributes_are_openinference(self):
+        """REQUIRED_ATTRIBUTES should reference OpenInference conventions."""
+        from p2m.core.collector import REQUIRED_ATTRIBUTES
+        for attr in REQUIRED_ATTRIBUTES:
             self.assertTrue(
-                "." in col or col in STANDARD_OTEL_FIELDS,
-                f"Unexpected column format: {col}"
+                "." in attr,
+                f"Unexpected attribute format: {attr}"
             )
 
 

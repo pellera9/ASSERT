@@ -1,85 +1,87 @@
-# Phoenix Auto-Trace Demo — Same Scenario, 20+ Frameworks
+# Phoenix Auto-Trace Demo — Same Scenario, 28 Frameworks
 
 This demo proves the spec's core claim (§4.4.3 Approach A): **2 lines of
-Phoenix instrumentation gives full OTel tracing across 20+ frameworks — zero
+Phoenix instrumentation gives full OTel tracing across 28 frameworks — zero
 per-framework maintenance for P2M.**
 
-All examples implement the same travel planner scenario:
-> "Book me a week in Tokyo under $3000"
+All examples implement the **same travel planner** with 5 mock tools:
+- `search_flights` — find flights to a destination
+- `search_hotels` — find hotels in a city
+- `check_weather` — get forecast and advisories
+- `check_travel_advisories` — visa, safety, health precautions
+- `validate_budget` — verify the plan fits the user's budget
+
+> Test query: "Plan a week in Tokyo for under $3000"
 
 Each file shows only what's different per framework. The instrumentation is
-always the same 2 lines at the top.
+always the same 2 lines. Mock tool responses come from `_tools.py`.
 
 ---
 
 ## Supported Frameworks (OpenInference auto-instrumentation)
 
 ### LLM Providers
-| Package | Framework |
-|---------|-----------|
-| `openinference-instrumentation-openai` | OpenAI |
-| `openinference-instrumentation-anthropic` | Anthropic |
-| `openinference-instrumentation-litellm` | LiteLLM |
-| `openinference-instrumentation-bedrock` | AWS Bedrock |
-| `openinference-instrumentation-mistralai` | MistralAI |
-| `openinference-instrumentation-groq` | Groq |
-| `openinference-instrumentation-google-genai` | Google GenAI |
-| `openinference-instrumentation-google-adk` | Google ADK |
-| `openinference-instrumentation-portkey` | Portkey |
+| Package | Framework | Demo |
+|---------|-----------|------|
+| `openinference-instrumentation-openai` | OpenAI | `travel_openai.py` |
+| `openinference-instrumentation-anthropic` | Anthropic | `travel_anthropic.py` |
+| `openinference-instrumentation-litellm` | LiteLLM | `travel_litellm.py` |
+| `openinference-instrumentation-bedrock` | AWS Bedrock | `travel_bedrock.py` |
+| `openinference-instrumentation-mistralai` | MistralAI | `travel_mistralai.py` |
+| `openinference-instrumentation-groq` | Groq | `travel_groq.py` |
+| `openinference-instrumentation-google-genai` | Google GenAI | `travel_google_genai.py` |
+| `openinference-instrumentation-google-adk` | Google ADK | `travel_google_adk.py` |
+| `openinference-instrumentation-portkey` | Portkey | `travel_portkey.py` |
 
 ### Agent Frameworks
+| Package | Framework | Demo |
+|---------|-----------|------|
+| `openinference-instrumentation-langchain` | LangChain / LangGraph | `travel_langchain.py` |
+| `openinference-instrumentation-llama-index` | LlamaIndex | `travel_llamaindex.py` |
+| `openinference-instrumentation-crewai` | CrewAI | `travel_crewai.py` |
+| `openinference-instrumentation-dspy` | DSPy | `travel_dspy.py` |
+
+### Additional (no demo file, same 2-line pattern)
 | Package | Framework |
 |---------|-----------|
-| `openinference-instrumentation-langchain` | LangChain / LangGraph |
-| `openinference-instrumentation-llama-index` | LlamaIndex |
-| `openinference-instrumentation-crewai` | CrewAI |
-| `openinference-instrumentation-dspy` | DSPy |
+| `openinference-instrumentation-openai-agents` | OpenAI Agents SDK |
+| `openinference-instrumentation-claude-agent-sdk` | Claude Agent SDK |
 | `openinference-instrumentation-haystack` | Haystack |
 | `openinference-instrumentation-guardrails` | Guardrails AI |
 | `openinference-instrumentation-instructor` | Instructor |
 | `openinference-instrumentation-mcp` | MCP |
 | `openinference-instrumentation-agno` | Agno Agents |
 | `openinference-instrumentation-beeai` | BeeAI |
+| `openinference-instrumentation-autogen-agentchat` | AutoGen AgentChat |
+| `openinference-instrumentation-pydantic-ai` | PydanticAI |
+| `openinference-instrumentation-smolagents` | smolagents |
+| `openinference-instrumentation-pipecat` | Pipecat |
+| `openinference-instrumentation-strands-agents` | Strands Agents |
+| `openinference-instrumentation-agentspec` | AgentSpec |
+| `openinference-instrumentation-vertexai` | VertexAI |
 
-### Java / TypeScript
-| Package | Framework |
-|---------|-----------|
-| `openinference-instrumentation-langchain4j` | LangChain4j (Java) |
-| `openinference-instrumentation-springAI` | Spring AI (Java) |
-| Vercel AI SDK | Vercel AI (TypeScript) |
-
-**Total: 22 auto-instrumented frameworks + manual `@tracer` for anything else.**
+**Total: 28 auto-instrumented frameworks + manual `@tracer` for anything else.**
 
 ---
 
-## Demo Files
+## Architecture
 
-Each file is a self-contained travel planner using a different framework.
-All share the same 2-line instrumentation preamble:
-
-```python
-from phoenix.otel import register
-register(auto_instrument=True)
 ```
-
-| File | Framework | What it demonstrates |
-|------|-----------|---------------------|
-| `travel_openai.py` | OpenAI (direct) | Tool calling with `gpt-4o` |
-| `travel_langchain.py` | LangChain/LangGraph | Multi-node graph (mirrors `travel_planner/agent.py`) |
-| `travel_litellm.py` | LiteLLM | Provider-agnostic model calls |
-| `travel_anthropic.py` | Anthropic | Claude tool use |
-| `travel_crewai.py` | CrewAI | Multi-agent crew |
-| `travel_llamaindex.py` | LlamaIndex | RAG + agent pipeline |
-| `travel_dspy.py` | DSPy | Declarative signatures |
+_tools.py              → shared mock tool data + simulate_tool() + schemas
+travel_openai.py       → OpenAI SDK + 2-line instrumentation + tool loop
+travel_langchain.py    → LangGraph + 2-line instrumentation + graph routing
+travel_crewai.py       → CrewAI + 2-line instrumentation + multi-agent crew
+...                    → same pattern for each framework
+```
 
 ## Running
 
 ```bash
-# Install Phoenix + the instrumentors you need
-pip install arize-phoenix-otel openinference-instrumentation-openai openinference-instrumentation-langchain
+# Install Phoenix + the instrumentor for your framework
+pip install arize-phoenix-otel openinference-instrumentation-openai
 
 # Run any example — traces appear in Phoenix
-python examples/phoenix_auto_trace/travel_openai.py
+python -m examples.phoenix_auto_trace.travel_openai
 
 # View traces
 phoenix serve  # http://localhost:6006

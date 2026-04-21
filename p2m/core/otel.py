@@ -411,6 +411,78 @@ class InMemoryTraceExporter:
         ]
 
 
+class LiveOTelExporter:
+    """Bridges the OTel SDK in-process exporter to p2m's TraceExporter protocol.
+
+    Process-level singleton: setup() only runs once. All OTelTracedSession
+    instances share the same collector so concurrent rollouts work correctly.
+    Each session calls clear() before its turn and export_session() after.
+    """
+
+    _instance: "LiveOTelExporter | None" = None
+    _setup_done: bool = False
+    _sdk_exporter: Any = None
+
+    def __new__(cls) -> "LiveOTelExporter":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def setup(self) -> None:
+        """Initialize OTel SDK once per process."""
+        if LiveOTelExporter._setup_done:
+            return
+
+        from opentelemetry import trace as otel_trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
+
+        class _Collector(SpanExporter):
+            def __init__(self):
+                self.spans: list = []
+            def export(self, spans):
+                self.spans.extend(spans)
+                return SpanExportResult.SUCCESS
+            def shutdown(self):
+                pass
+
+        LiveOTelExporter._sdk_exporter = _Collector()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(LiveOTelExporter._sdk_exporter))
+        otel_trace.set_tracer_provider(provider)
+
+        from openinference.instrumentation.langchain import LangChainInstrumentor
+        LangChainInstrumentor().instrument()
+        LiveOTelExporter._setup_done = True
+
+    def clear(self) -> None:
+        """Clear captured spans (call between turns)."""
+        if LiveOTelExporter._sdk_exporter is not None:
+            LiveOTelExporter._sdk_exporter.spans.clear()
+
+    def export_session(self, session_id: str) -> list[OTelSpan]:
+        """Convert all captured OTel SDK spans to p2m OTelSpan format."""
+        if LiveOTelExporter._sdk_exporter is None:
+            return []
+        result: list[OTelSpan] = []
+        for sdk_span in list(LiveOTelExporter._sdk_exporter.spans):
+            attrs = dict(sdk_span.attributes or {})
+            result.append(OTelSpan(
+                trace_id=f"{sdk_span.context.trace_id:032x}" if sdk_span.context else "",
+                span_id=f"{sdk_span.context.span_id:016x}" if sdk_span.context else "",
+                parent_span_id=(
+                    f"{sdk_span.parent.span_id:016x}"
+                    if sdk_span.parent else None
+                ),
+                name=sdk_span.name,
+                kind=attrs.get("openinference.span.kind", "UNKNOWN"),
+                start_time_ns=sdk_span.start_time or 0,
+                end_time_ns=sdk_span.end_time or 0,
+                attributes=attrs,
+            ))
+        return result
+
+
 # ── Extraction APIs (3 granularities) ─────────────────────────────
 # These productize Arize's notebook utility functions as typed, tested APIs.
 

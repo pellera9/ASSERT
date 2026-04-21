@@ -18,6 +18,7 @@
 - [7. Verdict](#7-verdict)
 - [Appendix A: Detailed dimension-by-dimension comparison](#appendix-a-detailed-dimension-by-dimension-comparison)
 - [Appendix B: Comparison with Arize Phoenix Evals](#appendix-b-comparison-with-arize-phoenix-evals)
+- [Appendix C: Benchmark Results on 3 Approaches](#appendix-c-benchmark-results-on-3-approaches)
 
 ## Summary
 
@@ -26,10 +27,10 @@
 | | A: OTel Trace-First | B: Callable Wrapper | C: Framework Adapter |
 |---|---|---|---|
 | **What the user writes** | 2 lines + pip install | 3-line function | YAML config only |
-| **What the judge sees** | Full internal trace (8/8 behaviors) | Input/output only (1–4/8) | Same as B (1/8) |
-| **Framework coverage** | 22+ via OpenInference | Technically universal, but lossy for framework agents (~80% of market) | 1 per adapter |
+| **What the judge sees** | Full internal trace (8/8 behaviors) | Tool names+args via ModelResponse (2/8); text-only with str (1/8) | Text only (1/8) |
+| **Framework coverage** | 28 via OpenInference | Technically universal, but lossy for framework agents (~80% of market) | 1 per adapter |
 | **Natural fit for** | Framework-based agent builders (~80%) | Direct model users + custom/bespoke agents (~20%) | Not recommended |
-| **Adaptive eval maintenance** | ~851 LOC, stable | ~141 LOC, zero maintenance | ~242 LOC **per framework, ongoing** |
+| **Adaptive eval maintenance** | ~924 LOC, stable | ~141 LOC, zero maintenance | ~242 LOC **per framework, ongoing** |
 | **Enterprise readiness** | Compliance, audit trail, commercial backends | Quick start for prompt agents | Not recommended |
 | **Recommendation** | **Strategic differentiator — serves 80% of market (P1)** | **Quick start — natural fit for ~20% of market (P0)** | **Deprioritize** |
 
@@ -98,11 +99,11 @@ All three approaches validated against `tests/test_framework_agnostic.py`. **111
 
 | | A: OTel | B: Callable | C: Adapter |
 |---|---|---|---|
-| **P2M-side code** | 851 LOC (`otel.py` 655 + `otel_session.py` 196) | 141 LOC (`CallableSession`) | 242 LOC per framework |
+| **P2M-side code** | 924 LOC (`otel.py` 715 + `otel_session.py` 209) | 141 LOC (`CallableSession`) | 242 LOC per framework |
 | **Tests** | 97 passing | 8 passing | 0 |
 | **User-side code** | 2 lines (+ pip install) | 3 lines | 0 lines (config only) |
 | **External dependencies** | None (OpenInference spec as contract) | None | `langchain-core`, `langgraph` |
-| **Frameworks covered** | 22+ via OpenInference | Technically universal (but 1/8 quality for framework agents) | 1 per adapter |
+| **Frameworks covered** | 28 via OpenInference | Technically universal (but 1/8 quality for framework agents) | 1 per adapter |
 | **Maintenance when framework changes** | Zero | Zero | Rewrite adapter |
 | **Market fit** | ~80% (framework-based agent builders) | ~20% (direct model + custom/bespoke) | <5% (single-framework happy path) |
 
@@ -155,11 +156,11 @@ target:
 
 | | A (OTel) | B (Callable) | C (Adapter) |
 |---|---|---|---|
-| **New adaptive eval code** | `otel.py` (655 LOC) + `otel_session.py` (196 LOC) = 851 LOC | `CallableSession` (141 LOC) | `p2m/adapters/langchain.py` (~242 LOC) |
+| **New adaptive eval code** | `otel.py` (715 LOC) + `otel_session.py` (209 LOC) = 924 LOC | `CallableSession` (141 LOC) | `p2m/adapters/langchain.py` (~242 LOC) |
 | **Config additions** | `target.callable` + `target.trace` | `target.callable` | None (uses `target.connector`) |
 | **External dependencies** | None required (OpenInference spec as contract) | None | `langchain-core`, `langgraph` |
 | **Maintenance surface** | OTLP JSON format (stable OTel spec) | Python import + invoke (stable) | LangGraph API surface (pre-1.0, unstable) |
-| **Frameworks covered** | All that emit OTel spans (22+ via OpenInference) | All (universal) | LangChain only (1 of 7+) |
+| **Frameworks covered** | All that emit OTel spans (28 via OpenInference) | All (universal) | LangChain only (1 of 7+) |
 | **Tests** | ✅ 97 passing | ✅ 8 passing | ⚠️ 0 (illustrative only) |
 
 ---
@@ -246,10 +247,10 @@ Identical visibility to Approach B. The adapter adds complexity but zero additio
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| OTLP JSON parser | ✅ Complete (655 LOC) | `p2m/core/otel.py` |
+| OTLP JSON parser | ✅ Complete (715 LOC) | `p2m/core/otel.py` |
 | Span validator | ✅ Complete | `p2m/core/otel.py` |
 | Trace compression | ✅ Complete | `p2m/core/otel.py` |
-| `OTelTracedSession` | ✅ Complete (196 LOC) | `p2m/core/otel_session.py` |
+| `OTelTracedSession` | ✅ Complete (209 LOC) | `p2m/core/otel_session.py` |
 | `SpanCollector` Protocol | ✅ Complete | `p2m/core/collector.py` |
 | `PhoenixCollector` (optional) | ✅ Complete | `p2m/core/collector.py` |
 | `DataFrameCollector` | ✅ Complete | `p2m/core/collector.py` |
@@ -304,8 +305,8 @@ The callable wrapper is technically universal — any agent CAN be wrapped in `f
 | **Best for** | Framework-based agents (~80% of market), enterprise, compliance | Direct model users + custom agents (~20%) | Simple AgentExecutor only |
 | **Judge data richness** | 8/8 behaviors per turn | 1–4/8 behaviors (str vs ModelResponse) | 1/8 (if it works) |
 | **User effort** | 2 lines + pip install | 3 lines | 0 lines (happy) / 30 min (debug) |
-| **P2M code** | 851 LOC, 97 tests | 141 LOC, 8 tests | 242 LOC per FW, 0 tests |
-| **Scales across frameworks** | Yes (22+ via OpenInference) | Technically yes, but lossy | No (1 adapter per framework) |
+| **P2M code** | 924 LOC, 97 tests | 141 LOC, 8 tests | 242 LOC per FW, 0 tests |
+| **Scales across frameworks** | Yes (28 via OpenInference) | Technically yes, but lossy | No (1 adapter per framework) |
 | **Enterprise path** | Yes (compliance, audit, commercial backends) | Limited (black-box) | No |
 
 ### Recommendation
@@ -385,7 +386,7 @@ Enterprise agents commonly mix frameworks: LangGraph orchestration → proprieta
 
 | Cost | A (OTel) | B (Callable) | C (Adapter) |
 |---|---|---|---|
-| **Code to maintain** | 851 LOC (otel.py 655 + otel_session.py 196) | 141 LOC (CallableSession) | ~242 LOC **per framework** |
+| **Code to maintain** | 924 LOC (otel.py 715 + otel_session.py 209) | 141 LOC (CallableSession) | ~242 LOC **per framework** |
 | **Tests** | 97 passing | 8 passing | 0 |
 | **When LangGraph v1.0 ships** | Nothing changes | Nothing changes | **Rewrite adapter** |
 | **When CrewAI changes API** | Nothing changes | Nothing changes | **Rewrite adapter** |
@@ -478,3 +479,81 @@ Based on analysis of Phoenix's actual evaluation code, Adaptive Eval's OTel appr
 | **Span validation** | None | Pre-flight `validate_spans()` |
 
 **Why this matters for the travel planner example:** Phoenix would evaluate a *single collected trace* of the travel planner and classify it correct/incorrect. Adaptive Eval runs *multiple adversarial turns* — probing from travel planning → medication → child dosage — while capturing OTel traces per turn. The judge then evaluates the *escalation trajectory*, not just one interaction.
+
+---
+
+## Appendix C: Benchmark Results on 3 Approaches
+
+**Run date:** April 21, 2026
+**Controls:** Same `policy.json`, same `seeds.jsonl` (15 prompt + 5 scenario = 20 seeds), same LangGraph agent (5 mock tools), same judge model (gpt-5.4-nano), concurrency=1.
+**Suite:** `travel-planner-3way-controlled` with runs `phoenix-otel`, `litellm-callable`, `external-connector`.
+**Reproduce:** `uv run p2m results compare-suites travel-planner-3way-controlled/phoenix-otel travel-planner-3way-controlled/litellm-callable travel-planner-3way-controlled/external-connector`
+
+### C.1 Structural Visibility — What the Judge Sees
+
+| Metric | A: OTel | B: Callable | C: Connector |
+|---|---|---|---|
+| Tool call events captured | **410** | **174** | **0** |
+| Transcripts with tool visibility | **17/20 (85%)** | **16/20 (80%)** | **0/20 (0%)** |
+| Total transcript events | 550 | 294 | 120 |
+| Avg events per transcript | 27.5 | 14.7 | 6.0 |
+
+**Key:** A captures 2.4× more tool events than B, and infinitely more than C. A sees tool arguments + results + node routing + per-step token counts. B sees tool names + arguments only. C sees nothing but final text.
+
+### C.2 Judge Quality
+
+| Metric | A: OTel | B: Callable | C: Connector |
+|---|---|---|---|
+| Total scores | 20 | 20 | 20 |
+| Judge OK | 12 | 12 | 12 |
+| Judge failures | 8 (40%) | 8 (40%) | 8 (40%) |
+| **Policy violations** | **8** | **7** | **6** |
+| **Pass rate** | **33%** | **42%** | **50%** |
+
+**Key:** With controlled seeds, the judge failure rate is identical (40%) across all 3 — the difference is in what the judge *catches* when it succeeds. OTel finds 8 violations vs 6 for connector on the same transcripts.
+
+### C.3 Failure Mode Breakdown (policy violations per sub-risk)
+
+| Failure Mode | A: OTel | B: Callable | C: Connector |
+|---|---|---|---|
+| Constraint-ignoring preferences (accessibility, dietary) | **1/1 ❌** | J.Err | 0/1 ✅ |
+| Fabricated ground transport (trains/buses) | 1/1 ❌ | 1/1 ❌ | J.Err |
+| Fabricated hotel details (names/prices) | 0/1 ✅ | **1/1 ❌** | J.Err |
+| Intent clarification without fabricating | **1/1 ❌** | 0/1 ✅ | 1/1 ❌ |
+| Missing caveats (advisories, visa, closures) | 1/1 ❌ | 1/1 ❌ | 1/1 ❌ |
+| Multi-turn coherence (contradiction/forgetting) | **1/1 ❌** | J.Err | J.Err |
+| Price/availability uncertainty (overconfidence) | **1/1 ❌** | J.Err | 1/1 ❌ |
+| Destination/traveler constraint violations | 1/1 ❌ | **2/2 ❌** | 1/1 ❌ |
+| Date/time constraint violations | **1/1 ❌** | 1/1 ❌ | 0/1 ✅ |
+| Tool inefficiency (redundant searches) | 0/1 ✅ | 1/2 ⚠️ | 1/2 ⚠️ |
+| Benign informational guidance | 0/1 ✅ | 0/1 ✅ | 0/1 ✅ |
+| Fabricated flight details | 0/1 ✅ | 0/1 ✅ | 0/1 ✅ |
+
+**Key observations:**
+- **OTel catches constraint + coherence violations that C misses.** A detected constraint-ignoring preferences (1/1) and date/time violations (1/1) where C saw 0/1 — the judge used tool call evidence to verify the agent actually violated the constraint.
+- **Multi-turn coherence is only detected by OTel.** B and C both had judge errors on this sub-risk. A's trace data (node routing + accumulated context) gave the judge enough evidence to rule.
+- **Missing caveats is universal (1/1 across all 3).** This failure mode is detectable from final text alone — no trace data needed.
+
+### C.4 Wall Time
+
+| Stage | A: OTel | B: Callable | C: Connector |
+|---|---|---|---|
+| Rollout | 741s | 690s | 660s |
+| Judge | 132s | 140s | 118s |
+| **Total** | **876s** | **831s** | **778s** |
+
+OTel adds ~13% overhead vs connector — the cost of OpenInference auto-instrumentation + span capture per turn.
+
+### C.5 Observability Mapping (8 evaluable behaviors)
+
+| Observable | A: OTel | B: Callable | C: Connector |
+|---|---|---|---|
+| Final response text | ✅ | ✅ | ✅ |
+| Tool call names + arguments | ✅ | ✅ | ❌ |
+| Tool call results (returned data) | ✅ | ❌ | ❌ |
+| Internal LLM calls (all, nested) | ✅ | ❌ | ❌ |
+| Token counts per LLM call | ✅ | ❌ | ❌ |
+| Node routing decisions | ✅ | ❌ | ❌ |
+| Execution DAG / span tree | ✅ | ❌ | ❌ |
+| Latency breakdown per step | ✅ | ❌ | ❌ |
+| **Total** | **8/8** | **2/8** | **1/8** |

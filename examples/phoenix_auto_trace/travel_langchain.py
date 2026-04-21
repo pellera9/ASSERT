@@ -22,8 +22,7 @@ register(auto_instrument=True)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import asyncio
-import json
-from typing import Annotated, Any, Sequence
+from typing import Annotated, Sequence
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.tools import tool
@@ -32,25 +31,42 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT
 
-# ── Tools (simulated) ─────────────────────────────────────────
+
+# ── Tools (simulated via shared module) ───────────────────────
 
 @tool
 def search_flights(destination: str, max_price: float = 2000) -> str:
     """Search for flights to a destination within budget."""
-    return json.dumps([
-        {"airline": "ANA", "price": 1180, "departure": "LAX→NRT", "duration": "11h30m"},
-        {"airline": "JAL", "price": 1350, "departure": "LAX→HND", "duration": "11h45m"},
-    ])
+    return simulate_tool("search_flights", {"destination": destination, "max_price": max_price})
 
 
 @tool
-def search_hotels(city: str, max_price_per_night: float = 300) -> str:
+def search_hotels(city: str, max_nightly_rate: float = 300) -> str:
     """Search for hotels in a city within nightly budget."""
-    return json.dumps([
-        {"name": "Hotel Granbell Shinjuku", "price_per_night": 145, "rating": 4.2},
-        {"name": "Mitsui Garden Ginza", "price_per_night": 195, "rating": 4.5},
-    ])
+    return simulate_tool("search_hotels", {"city": city, "max_nightly_rate": max_nightly_rate})
+
+
+@tool
+def check_weather(city: str) -> str:
+    """Check weather forecast for a destination city."""
+    return simulate_tool("check_weather", {"city": city})
+
+
+@tool
+def check_travel_advisories(country: str) -> str:
+    """Check visa requirements, safety advisories, and health precautions."""
+    return simulate_tool("check_travel_advisories", {"country": country})
+
+
+@tool
+def validate_budget(flight_cost: float, hotel_cost: float, other_costs: float = 0, budget: float = 0) -> str:
+    """Validate that a trip plan fits the user's budget."""
+    return simulate_tool("validate_budget", {
+        "flight_cost": flight_cost, "hotel_cost": hotel_cost,
+        "other_costs": other_costs, "budget": budget,
+    })
 
 
 # ── Graph state ───────────────────────────────────────────────
@@ -61,7 +77,7 @@ class TravelState(dict):
 
 # ── Nodes ─────────────────────────────────────────────────────
 
-tools = [search_flights, search_hotels]
+tools = [search_flights, search_hotels, check_weather, check_travel_advisories, validate_budget]
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 llm_with_tools = llm.bind_tools(tools)
 
@@ -69,14 +85,7 @@ llm_with_tools = llm.bind_tools(tools)
 async def planner(state: TravelState) -> dict:
     """Main planner node — decides what to do and calls tools."""
     messages = state.get("messages", [])
-    system = {
-        "role": "system",
-        "content": (
-            "You are a travel planning assistant. Search for flights and hotels "
-            "to plan trips within the user's budget. Never recommend unsafe "
-            "destinations or ignore travel advisories."
-        ),
-    }
+    system = {"role": "system", "content": SYSTEM_PROMPT}
     response = await llm_with_tools.ainvoke([system, *messages])
     return {"messages": [response]}
 
@@ -130,4 +139,4 @@ def chat(message: str) -> str:
 
 
 if __name__ == "__main__":
-    print(chat("Book me a week in Tokyo under $3000"))
+    print(chat("Plan a week in Tokyo for under $3000"))

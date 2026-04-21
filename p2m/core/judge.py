@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, cast
 
 import yaml
+from pydantic import BaseModel, create_model
 from rapidfuzz import fuzz
 
 from p2m.core.config_model import DEFAULT_JUDGE_MAX_TOKENS
@@ -193,7 +194,11 @@ def build_judge_schema(
     citation_style: str = "turn",
     node_count: int | None = None,
 ) -> Dict[str, Any]:
-    """Build JSON schema for judge output."""
+    """Build JSON schema for judge output.
+
+    Uses only strict-mode-compatible keywords (no minLength, minimum,
+    maximum, maxItems) so OpenAI structured output decoding works reliably.
+    """
     dimension_properties: Dict[str, Any] = {}
     dimension_required: list[str] = []
     for dim in dimensions:
@@ -201,9 +206,7 @@ def build_judge_schema(
         dimension_properties[name] = {"type": "boolean"}
         dimension_required.append(name)
     dimension_justification_properties = {name: {"type": "string"} for name in dimension_required}
-    node_index_schema: Dict[str, Any] = {"type": "integer", "minimum": 0}
-    if node_count is not None and node_count > 0:
-        node_index_schema["maximum"] = node_count - 1
+    node_index_schema: Dict[str, Any] = {"type": "integer"}
     props: Dict[str, Any] = {
         DIMENSIONS_KEY: {
             "type": "object",
@@ -219,14 +222,13 @@ def build_judge_schema(
         },
         NODE_JUDGMENTS_KEY: {
             "type": "array",
-            **({"maxItems": node_count} if node_count is not None else {}),
             "items": {
                 "type": "object",
                 "properties": {
                     "node_index": node_index_schema,
                     "violated": {"type": "boolean"},
                     "confidence": {"type": "string", "enum": list(CONFIDENCE_LEVELS)},
-                    "reasoning": {"type": "string", "minLength": 1},
+                    "reasoning": {"type": "string"},
                 },
                 "required": ["node_index", "violated", "confidence", "reasoning"],
                 "additionalProperties": False,
@@ -236,7 +238,7 @@ def build_judge_schema(
     required = [DIMENSIONS_KEY, "dimension_justifications", NODE_JUDGMENTS_KEY]
     if include_citations:
         if citation_style == "xml":
-            props["highlights"] = {"type": "string", "minLength": 1}
+            props["highlights"] = {"type": "string"}
             required.append("highlights")
         else:
             citation_properties: Dict[str, Any] = {
@@ -268,6 +270,66 @@ def build_judge_schema(
         "properties": props,
         "required": required,
     }
+
+
+class _NodeJudgment(BaseModel):
+    """Single node judgment entry."""
+    node_index: int
+    violated: bool
+    confidence: Literal["high", "medium", "low"]
+    reasoning: str
+
+
+class _TurnCitation(BaseModel):
+    """Citation referencing a specific turn."""
+    turn: int
+    quote: str
+    relevance: str
+
+
+class _ResponseCitation(BaseModel):
+    """Citation without turn reference."""
+    quote: str
+    relevance: str
+
+
+def build_judge_pydantic_model(
+    dimensions: list[Dict[str, str]],
+    include_citations: bool = False,
+    citation_style: str = "turn",
+) -> type[BaseModel]:
+    """Build a Pydantic model at runtime for judge structured output.
+
+    Uses create_model() so the dimension fields are dynamic (vary per policy)
+    while the schema is always strict-mode compliant. LiteLLM accepts the
+    resulting class directly as response_format.
+    """
+    dim_names = [dim["name"] for dim in dimensions]
+
+    DimensionFlags = create_model(
+        "DimensionFlags",
+        **{name: (bool, ...) for name in dim_names},
+    )
+    DimensionJustifications = create_model(
+        "DimensionJustifications",
+        **{name: (str, ...) for name in dim_names},
+    )
+
+    fields: Dict[str, Any] = {
+        "dimensions": (DimensionFlags, ...),
+        "dimension_justifications": (DimensionJustifications, ...),
+        "node_judgments": (List[_NodeJudgment], ...),
+    }
+
+    if include_citations:
+        if citation_style == "xml":
+            fields["highlights"] = (str, ...)
+        elif citation_style == "turn":
+            fields["citations"] = (List[_TurnCitation], ...)
+        elif citation_style == "response":
+            fields["citations"] = (List[_ResponseCitation], ...)
+
+    return create_model("JudgeVerdict", **fields)
 
 
 def render_dimensions_prompt(dimensions: list[Dict[str, str]]) -> str:
@@ -374,6 +436,11 @@ def build_judge_contract(
         citation_style=citation_style,
         node_count=node_count,
     )
+    pydantic_model = build_judge_pydantic_model(
+        dims,
+        include_citations=True,
+        citation_style=citation_style,
+    )
     return {
         "system_prompt": build_judge_system_prompt(
             template,
@@ -384,6 +451,7 @@ def build_judge_contract(
         "response_schema": {
             "name": schema_name,
             "json_schema": schema,
+            "pydantic_model": pydantic_model,
         },
         "score_keys": [dim["name"] for dim in dims],
     }
@@ -1535,16 +1603,20 @@ def _coerce_response_schema(response_schema: Any) -> tuple[str | None, dict[str,
     if response_schema is None:
         return None, None
 
+    # Use the hand-built json_schema (strict-mode compliant) rather than
+    # Pydantic model_json_schema() which lacks additionalProperties:false
+    # on nested $def objects. The pydantic_model is stored for future use
+    # when LiteLLM adds native Pydantic response_format support.
+    if isinstance(response_schema, dict):
+        name = response_schema.get("name")
+        json_schema = response_schema.get("json_schema")
+        if isinstance(name, str) and isinstance(json_schema, dict):
+            return name, json_schema
+
     name = getattr(response_schema, "name", None)
     json_schema = getattr(response_schema, "json_schema", None)
     if isinstance(name, str) and isinstance(json_schema, dict):
         return name, json_schema
-
-    if isinstance(response_schema, dict):
-        name = response_schema.get("name")
-        json_schema = response_schema.get("json_schema") or response_schema.get("schema")
-        if isinstance(name, str) and isinstance(json_schema, dict):
-            return name, json_schema
 
     raise ValueError("Unsupported response_schema format for multi_judge")
 

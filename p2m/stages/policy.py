@@ -39,7 +39,7 @@ def policy_schema(*, min_sub_risks: int = 0) -> Dict[str, Any]:
         },
     }
     if min_sub_risks > 0:
-        sub_risks_prop["minItems"] = min_sub_risks
+        pass  # minItems not supported in strict mode; count validated post-generation
     return {
         "type": "object",
         "additionalProperties": False,

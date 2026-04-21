@@ -485,7 +485,8 @@ def _subrisk_metric_map(rows: Iterable[dict[str, Any]], metric: str) -> dict[str
         "  p2m run --config examples/pipes/health_assistant.yaml\n"
         "  p2m run --config examples/pipes/health_assistant_external.yaml\n"
         "  p2m results list\n"
-        "  p2m results compare health-assistant-v1 gpt54-eval gpt54-eval"
+        "  p2m results compare health-assistant-v1 gpt54-eval gpt54-eval\n"
+        "  p2m results compare-suites suite-a/run-1 suite-b/run-1 suite-c/run-1"
     ),
 )
 @click.version_option(version="0.1.0", prog_name="p2m")
@@ -773,9 +774,8 @@ def results_status(suite: str, run: Optional[str], results_dir: Path, as_json: b
             console.print(dim_table)
 
 
-@results.command("compare", short_help="Compare multiple runs in the same suite")
-@click.argument("suite", shell_complete=_complete_suite)
-@click.argument("runs", nargs=-1)
+@results.command("compare", short_help="Compare runs (same suite or cross-suite)")
+@click.argument("args", nargs=-1)
 @click.option(
     "--results-dir",
     type=click.Path(path_type=Path),
@@ -793,18 +793,77 @@ def results_status(suite: str, run: Optional[str], results_dir: Path, as_json: b
 @click.option("--limit", default=8, show_default=True, type=int, help="Maximum sub-risks to show in the delta table.")
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON instead of tables.")
 @click.option("--no-color", is_flag=True, help="Disable colored terminal output.")
+@click.pass_context
 def results_compare(
-    suite: str,
-    runs: tuple[str, ...],
+    ctx: click.Context,
+    args: tuple[str, ...],
     results_dir: Path,
     metric: str,
     limit: int,
     as_json: bool,
     no_color: bool,
 ):
-    """Compare two or more runs and highlight the largest sub-risk shifts."""
+    """Compare runs. Accepts two forms:
+
+    \b
+    Within one suite:  p2m results compare SUITE RUN1 RUN2
+    Cross-suite:       p2m results compare SUITE/RUN1 SUITE/RUN2
+    """
+    if len(args) < 2:
+        _error(
+            "Provide at least two arguments.\n"
+            "  Within suite:  p2m results compare SUITE RUN1 RUN2\n"
+            "  Cross-suite:   p2m results compare SUITE/RUN1 SUITE/RUN2"
+        )
+
+    # Detect cross-suite mode: any arg contains "/"
+    if any("/" in a for a in args):
+        ctx.invoke(
+            results_compare_suites,
+            suite_runs=args,
+            results_dir=results_dir,
+            metric=metric,
+            as_json=as_json,
+            no_color=no_color,
+        )
+        return
+
+    # Within-suite mode: first arg is suite, rest are run IDs
+    suite = args[0]
+    runs = args[1:]
     if len(runs) < 2:
+        results_root = _resolve_results_dir(results_dir)
+        suite_b = results_root / runs[0] if runs else None
+        if runs and suite_b and suite_b.exists():
+            _error(
+                f"'{runs[0]}' looks like a suite name, not a run ID.\n"
+                f"Use slash format for cross-suite:\n"
+                f"  p2m results compare {suite}/run-1 {runs[0]}/run-1"
+            )
         _error("Provide at least two run IDs to compare.")
+
+    _run_within_suite_compare(
+        suite=suite,
+        runs=runs,
+        results_dir=results_dir,
+        metric=metric,
+        limit=limit,
+        as_json=as_json,
+        no_color=no_color,
+    )
+
+
+def _run_within_suite_compare(
+    *,
+    suite: str,
+    runs: tuple[str, ...] | list[str],
+    results_dir: Path,
+    metric: str,
+    limit: int,
+    as_json: bool,
+    no_color: bool,
+) -> None:
+    """Original within-suite comparison logic."""
 
     results_root = _resolve_results_dir(results_dir)
     suite_dir = results_root / suite
@@ -929,6 +988,176 @@ def results_compare(
                 _fmt_percent(row["delta"]),
             )
         console.print(delta_table)
+
+
+@results.command("compare-suites", short_help="Compare runs across different suites (e.g., approach A vs B vs C)")
+@click.argument("suite_runs", nargs=-1)
+@click.option(
+    "--results-dir",
+    type=click.Path(path_type=Path),
+    default=DEFAULT_RESULTS_DIR,
+    show_default=True,
+    help="Results root to inspect.",
+)
+@click.option(
+    "--metric",
+    default=DEFAULT_COMPARE_METRIC,
+    show_default=True,
+    help="Bad-event dimension to compare.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON instead of tables.")
+@click.option("--no-color", is_flag=True, help="Disable colored terminal output.")
+def results_compare_suites(
+    suite_runs: tuple[str, ...],
+    results_dir: Path,
+    metric: str,
+    as_json: bool,
+    no_color: bool,
+):
+    """Compare runs across different suites.
+
+    Each argument is SUITE/RUN (e.g., travel-planner-phoenix-otel-demo/run-1).
+    Useful for comparing different integration approaches on the same agent.
+
+    \b
+    Examples:
+      p2m results compare-suites \\
+        travel-planner-phoenix-otel-demo/run-1 \\
+        travel-planner-litellm-callable/run-1 \\
+        travel-planner-external-connector/run-1
+    """
+    if len(suite_runs) < 2:
+        _error("Provide at least two SUITE/RUN arguments to compare.")
+
+    results_root = _resolve_results_dir(results_dir)
+    run_summaries: list[dict[str, Any]] = []
+    labels: list[str] = []
+
+    for suite_run in suite_runs:
+        parts = suite_run.strip("/").split("/")
+        if len(parts) == 1:
+            suite_id, run_id = parts[0], "run-1"
+        elif len(parts) == 2:
+            suite_id, run_id = parts
+        else:
+            _error(f"Invalid format: '{suite_run}'. Use SUITE/RUN (e.g., my-suite/run-1).")
+            return  # unreachable, for type checker
+
+        run_dir = results_root / suite_id / run_id
+        if not run_dir.exists():
+            _error(f"Not found: {suite_id}/{run_id}")
+        run_summary = _load_run_summary(run_dir)
+        if run_summary is None:
+            _error(f"No scores in {suite_id}/{run_id}")
+        run_summary["suite_id"] = suite_id
+        run_summaries.append(run_summary)
+        labels.append(f"{suite_id}/{run_id}")
+
+    # Count structural visibility from transcripts
+    structural: list[dict[str, Any]] = []
+    for i, suite_run in enumerate(suite_runs):
+        parts = suite_run.strip("/").split("/")
+        suite_id = parts[0]
+        run_id = parts[1] if len(parts) > 1 else "run-1"
+        transcripts_path = results_root / suite_id / run_id / "transcripts.jsonl"
+        transcript_rows = load_jsonl(transcripts_path)
+        total_events = sum(len(r.get("events", [])) for r in transcript_rows)
+        tool_events = sum(
+            1 for r in transcript_rows
+            for e in r.get("events", [])
+            if e.get("edit", {}).get("type") == "tool_call"
+        )
+        msg_events = sum(
+            1 for r in transcript_rows
+            for e in r.get("events", [])
+            if e.get("edit", {}).get("type") == "add_message"
+        )
+        with_tools = sum(
+            1 for r in transcript_rows
+            if any(e.get("edit", {}).get("type") == "tool_call" for e in r.get("events", []))
+        )
+        structural.append({
+            "label": labels[i],
+            "transcripts": len(transcript_rows),
+            "total_events": total_events,
+            "msg_events": msg_events,
+            "tool_events": tool_events,
+            "with_tools": with_tools,
+        })
+
+    if as_json:
+        run_rows = []
+        for i, run_summary in enumerate(run_summaries):
+            prompt_metrics = run_summary.get("prompt_metrics") or {}
+            run_rows.append({
+                "label": labels[i],
+                "suite_id": run_summary["suite_id"],
+                "run_id": run_summary["run_id"],
+                "status": run_summary["status"],
+                "prompt": prompt_metrics,
+                "structural": structural[i],
+            })
+        _echo_json({"metric": metric, "runs": run_rows})
+        return
+
+    console = _console(no_color=no_color)
+
+    # Table 1: Judge quality
+    table = Table(
+        title=f"Cross-Suite Comparison ({_metric_label(metric)})",
+        box=None,
+        show_header=True,
+        show_edge=False,
+        pad_edge=False,
+    )
+    table.add_column("Suite / Run", style="cyan", no_wrap=True)
+    table.add_column("Scores", style="white", no_wrap=True)
+    table.add_column("Judge OK", style="white", no_wrap=True)
+    table.add_column("J.Fail%", style="white", no_wrap=True)
+    table.add_column(f"{_metric_label(metric)} Rate", style="white", no_wrap=True)
+    table.add_column("Pass Rate", style="white", no_wrap=True)
+    for i, run_summary in enumerate(run_summaries):
+        pm = run_summary.get("prompt_metrics") or {}
+        total = pm.get("total", 0)
+        ok = pm.get("scored_total", 0)
+        fail_rate = pm.get("judge_failure_rate")
+        dim_rate = _dimension_rate(pm, metric)
+        pass_rate = (1.0 - dim_rate) if dim_rate is not None else None
+        table.add_row(
+            labels[i],
+            str(total),
+            str(ok),
+            _fmt_percent(fail_rate),
+            _fmt_percent(dim_rate),
+            _fmt_percent(pass_rate),
+        )
+    console.print(table)
+    console.print()
+
+    # Table 2: Structural visibility
+    struct_table = Table(
+        title="Structural Visibility (what the judge sees)",
+        box=None,
+        show_header=True,
+        show_edge=False,
+        pad_edge=False,
+    )
+    struct_table.add_column("Suite / Run", style="cyan", no_wrap=True)
+    struct_table.add_column("Transcripts", style="white", no_wrap=True)
+    struct_table.add_column("Events", style="white", no_wrap=True)
+    struct_table.add_column("Messages", style="white", no_wrap=True)
+    struct_table.add_column("Tool Events", style="white", no_wrap=True)
+    struct_table.add_column("With Tools", style="white", no_wrap=True)
+    for s in structural:
+        struct_table.add_row(
+            s["label"],
+            str(s["transcripts"]),
+            str(s["total_events"]),
+            str(s["msg_events"]),
+            str(s["tool_events"]),
+            f"{s['with_tools']}/{s['transcripts']}",
+        )
+    console.print(struct_table)
 
 
 @cli.group(cls=SuggestingGroup, short_help="Run post-hoc analysis commands")

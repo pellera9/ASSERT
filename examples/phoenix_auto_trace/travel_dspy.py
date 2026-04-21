@@ -17,17 +17,46 @@ register(auto_instrument=True)
 # Agent code — standard DSPy
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-import json
 import dspy
+
+from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT
 
 lm = dspy.LM("openai/gpt-4o", temperature=0)
 dspy.configure(lm=lm)
 
 
+# ── Tool wrappers ─────────────────────────────────────────────
+
+def _search_flights(destination: str) -> str:
+    return simulate_tool("search_flights", {"destination": destination})
+
+
+def _search_hotels(city: str) -> str:
+    return simulate_tool("search_hotels", {"city": city})
+
+
+def _check_weather(city: str) -> str:
+    return simulate_tool("check_weather", {"city": city})
+
+
+def _check_travel_advisories(country: str) -> str:
+    return simulate_tool("check_travel_advisories", {"country": country})
+
+
+def _validate_budget(flight_cost: float, hotel_cost: float, other_costs: float, budget: float) -> str:
+    return simulate_tool("validate_budget", {
+        "flight_cost": flight_cost, "hotel_cost": hotel_cost,
+        "other_costs": other_costs, "budget": budget,
+    })
+
+
+# ── DSPy Signatures ──────────────────────────────────────────
+
 class ExtractTravelIntent(dspy.Signature):
     """Extract travel parameters from a user request."""
     request: str = dspy.InputField(desc="User's travel planning request")
-    destination: str = dspy.OutputField(desc="Travel destination")
+    destination: str = dspy.OutputField(desc="Travel destination city")
+    country: str = dspy.OutputField(desc="Destination country")
     duration_days: int = dspy.OutputField(desc="Trip duration in days")
     budget: float = dspy.OutputField(desc="Total budget in USD")
 
@@ -39,21 +68,10 @@ class PlanItinerary(dspy.Signature):
     budget: float = dspy.InputField()
     flights: str = dspy.InputField(desc="Available flight options as JSON")
     hotels: str = dspy.InputField(desc="Available hotel options as JSON")
-    itinerary: str = dspy.OutputField(desc="Complete travel itinerary with costs")
-
-
-def _search_flights(destination: str) -> str:
-    return json.dumps([
-        {"airline": "ANA", "price": 1180, "departure": "LAX→NRT", "duration": "11h30m"},
-        {"airline": "JAL", "price": 1350, "departure": "LAX→HND", "duration": "11h45m"},
-    ])
-
-
-def _search_hotels(city: str) -> str:
-    return json.dumps([
-        {"name": "Hotel Granbell Shinjuku", "price_per_night": 145, "rating": 4.2},
-        {"name": "Mitsui Garden Ginza", "price_per_night": 195, "rating": 4.5},
-    ])
+    weather: str = dspy.InputField(desc="Weather forecast as JSON")
+    advisories: str = dspy.InputField(desc="Travel advisories as JSON")
+    budget_check: str = dspy.InputField(desc="Budget validation result as JSON")
+    itinerary: str = dspy.OutputField(desc="Complete travel itinerary with costs and safety info")
 
 
 class TravelPlanner(dspy.Module):
@@ -66,6 +84,12 @@ class TravelPlanner(dspy.Module):
 
         flights = _search_flights(intent.destination)
         hotels = _search_hotels(intent.destination)
+        weather = _check_weather(intent.destination)
+        advisories = _check_travel_advisories(intent.country)
+        budget_check = _validate_budget(
+            flight_cost=1180, hotel_cost=145 * intent.duration_days,
+            other_costs=0, budget=intent.budget,
+        )
 
         result = self.plan(
             destination=intent.destination,
@@ -73,6 +97,9 @@ class TravelPlanner(dspy.Module):
             budget=intent.budget,
             flights=flights,
             hotels=hotels,
+            weather=weather,
+            advisories=advisories,
+            budget_check=budget_check,
         )
         return result.itinerary
 
@@ -86,4 +113,4 @@ def chat(message: str) -> str:
 
 
 if __name__ == "__main__":
-    print(chat("Book me a week in Tokyo under $3000"))
+    print(chat("Plan a week in Tokyo for under $3000"))
