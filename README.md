@@ -20,7 +20,7 @@ To this end, we developed adaptive eval as an open-source evaluation tool to add
   <img src="logo.jpg" alt="p2m" width="100%">
 </p>
 
-**p2m** (policy-to-measurements) is a safety evaluation framework for language models and agents. It tests whether a target handles risky requests correctly: answering permissible requests and declining not-permissible ones.
+**p2m** (policy-to-measurements) is a spec-driven evaluation framework for language models and agents. It tests whether a target handles failure modes (your product risks) correctly: answering permissible requests and declining not-permissible ones.
 
 It runs a four-stage pipeline:
 
