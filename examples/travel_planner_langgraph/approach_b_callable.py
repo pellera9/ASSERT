@@ -72,7 +72,7 @@ def target(message: str):
 #   target:
 #     callable: examples.travel_planner.approach_b_callable:target
 #
-# The actual experiment in approach_b_config.yaml uses
+# The actual experiment in config_b_callable.yaml uses
 # p2m.travel_target:target which returns ModelResponse with tool
 # calls extracted from the full LangGraph execution.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

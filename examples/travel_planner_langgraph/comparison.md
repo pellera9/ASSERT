@@ -263,7 +263,7 @@ Identical visibility to Approach B. The adapter adds complexity but zero additio
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| Example adapter | ⚠️ Illustrative (242 LOC) | `examples/travel_planner/approach_c_adapter.py` |
+| Example adapter | ⚠️ Illustrative (242 LOC) | `examples/travel_planner_langgraph/approach_c_adapter.py` |
 | Tests | ❌ None | Deprioritized — documented anti-pattern |
 
 ---

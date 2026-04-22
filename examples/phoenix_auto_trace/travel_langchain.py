@@ -4,7 +4,7 @@ Instrumentation: 2 lines. Agent code: standard LangGraph.
 Traces captured: graph node executions, LLM calls per node, tool invocations,
 routing decisions, token counts, latency per node.
 
-This is a simplified version of examples/travel_planner/agent.py — same
+This is a simplified version of examples/travel_planner_langgraph/agent.py — same
 architecture, no MCP dependency, self-contained with simulated tools.
 """
 
