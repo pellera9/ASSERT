@@ -10,7 +10,9 @@ In the AI development lifecycle, engineers need constant iterations in the pre-d
 3. **Opaque artifacts** — Results are trapped in proprietary portals with no local inspection or CI integration.
 4. **Generic benchmarks** — Tests measure general capabilities rather than requirement-specific behaviors.
 
-Responsible AI development lifecycle share the same loop with GenAI Ops: identify -> map -> measurements -> mitigate in an iterative loop. Requirement-driven evaluation automates **identification, mapping, and measurements of behaviors specific to the requirements of the AI applications with human in the loop**, compared to generic "static evals". To this end, we developed adaptive eval as an open-source evaluation tool to address these gaps that allows engineers to write evals driven by a YAML spec (e.g., testing requirements or policies). You can use the following to get started:
+Responsible AI development lifecycle share the same loop with GenAI Ops: identify -> map -> measurements -> mitigate in an iterative loop. Requirement-driven evaluation automates **identification, mapping, and measurements of behaviors specific to the requirements of the AI applications with human in the loop**, compared to generic "static evals". 
+
+To this end, we developed adaptive eval as an open-source evaluation tool to address these gaps that allows engineers to write evals driven by a YAML spec (e.g., testing requirements or policies). You can use the following to get started:
 
 ## Policy to Metric (P2M)
 
