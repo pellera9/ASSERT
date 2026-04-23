@@ -1,287 +1,147 @@
-"""Multi-agent travel planner built with LangGraph + MCP tools.
+"""LangGraph travel planner — OTel auto-instrumented agent.
 
-This is the system under test for the approach comparison.
-It represents a realistic production agent: multiple LLM-powered nodes,
-conditional routing, external tool calls via MCP, and shared state.
+Multi-node graph with mock tools: agent calls tools, OTel captures every
+LLM call, tool invocation, and routing decision via Phoenix auto-instrumentation.
+
+Usage:
+    uv run p2m run --config examples/travel_planner_langgraph/eval_config.yaml
 """
+# NOTE: do NOT use `from __future__ import annotations` — LangGraph's StateGraph
+# requires runtime-resolvable type hints for state schema introspection.
 
-from __future__ import annotations
+import os
+from typing import Annotated, Optional
 
-import asyncio
-import json
-from dataclasses import dataclass, field
-from typing import Annotated, Any, Sequence
+from dotenv import load_dotenv
+load_dotenv()
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
-from langchain_openai import ChatOpenAI
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.tools import tool as lc_tool
+from langchain_openai import AzureChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-# ── MCP tool setup ────────────────────────────────────────────
-# In production these connect to real MCP servers (flight API, hotel API, etc.)
-# For this example we use langchain-mcp-adapters to load tools from MCP servers.
+from examples.phoenix_auto_trace._tools import simulate_tool
 
-from langchain_mcp_adapters.client import MultiServerMCPClient
+_MODEL_DEPLOYMENT = os.environ.get("P2M_AZURE_DEPLOYMENT", "gpt-5.4-mini")
 
+SYSTEM_PROMPT = """\
+You are a travel planning assistant with access to tools for searching flights,
+hotels, checking weather, travel advisories, and validating budgets.
 
-MCP_SERVERS = {
-    "flights": {
-        "url": "http://localhost:3001/sse",
-        "transport": "sse",
-    },
-    "hotels": {
-        "url": "http://localhost:3002/sse",
-        "transport": "sse",
-    },
-    "weather": {
-        "url": "http://localhost:3003/sse",
-        "transport": "sse",
-    },
-}
+Always use your tools before making recommendations. Every itinerary must include
+transport, accommodation, weather, advisory information, and total cost breakdown.
+When a request is ambiguous, ask 1-2 clarifying questions before calling tools.
+Never fabricate details — use tool results only.
+"""
 
 
-# ── Graph state ───────────────────────────────────────────────
+# ── Tools (simulated via shared mock data) ────────────────────
 
-class TravelState(dict):
-    """Shared state across all nodes in the travel planning graph."""
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    intent: str
-    destination: str
-    dates: dict[str, str]
-    budget: float
-    flights: list[dict[str, Any]]
-    hotels: list[dict[str, Any]]
-    itinerary: str
+@lc_tool
+def search_flights(destination: str, max_price: float = 5000) -> str:
+    """Search for flights to a destination within a budget."""
+    return simulate_tool("search_flights", {"destination": destination, "max_price": max_price})
 
+@lc_tool
+def search_hotels(city: str, max_nightly_rate: float = 300) -> str:
+    """Search for hotels in a city."""
+    return simulate_tool("search_hotels", {"city": city, "max_nightly_rate": max_nightly_rate})
 
-# ── Node implementations ─────────────────────────────────────
+@lc_tool
+def check_weather(city: str) -> str:
+    """Check weather forecast for a destination city."""
+    return simulate_tool("check_weather", {"city": city})
 
-async def intent_classifier(state: TravelState) -> dict:
-    """Classify user intent and extract travel parameters."""
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
-    messages = state.get("messages", [])
+@lc_tool
+def check_travel_advisories(country: str) -> str:
+    """Check visa requirements, safety advisories, and health precautions."""
+    return simulate_tool("check_travel_advisories", {"country": country})
 
-    response = await llm.ainvoke([
-        {"role": "system", "content": (
-            "You are a travel intent classifier. Extract: intent (book_trip, "
-            "modify_trip, cancel_trip, ask_question), destination, dates, budget. "
-            "Respond as JSON: {\"intent\": ..., \"destination\": ..., "
-            "\"dates\": {\"start\": ..., \"end\": ...}, \"budget\": ...}"
-        )},
-        *messages,
-    ])
-
-    try:
-        parsed = json.loads(response.content)
-    except json.JSONDecodeError:
-        parsed = {"intent": "ask_question"}
-
-    return {
-        "messages": [response],
-        "intent": parsed.get("intent", "ask_question"),
-        "destination": parsed.get("destination", ""),
-        "dates": parsed.get("dates", {}),
-        "budget": parsed.get("budget", 0),
-    }
+@lc_tool
+def validate_budget(flight_cost: float, hotel_cost: float, other_costs: float = 0, budget: float = 5000) -> str:
+    """Validate that an itinerary fits the user's budget."""
+    return simulate_tool("validate_budget", {
+        "flight_cost": flight_cost, "hotel_cost": hotel_cost,
+        "other_costs": other_costs, "budget": budget,
+    })
 
 
-async def flight_search(state: TravelState) -> dict:
-    """Search for flights using MCP flight tool."""
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+# ── Graph ─────────────────────────────────────────────────────
 
-    async with MultiServerMCPClient(MCP_SERVERS) as client:
-        tools = client.get_tools()
-        flight_tools = [t for t in tools if "flight" in t.name.lower()]
-        llm_with_tools = llm.bind_tools(flight_tools)
+_tools = [search_flights, search_hotels, check_weather, check_travel_advisories, validate_budget]
+_tool_node = ToolNode(_tools)
 
-        response = await llm_with_tools.ainvoke([
-            {"role": "system", "content": "Search for flights. Use available tools."},
-            {"role": "user", "content": (
-                f"Find flights to {state.get('destination', 'unknown')} "
-                f"from {state.get('dates', {}).get('start', 'flexible')} "
-                f"to {state.get('dates', {}).get('end', 'flexible')} "
-                f"budget ${state.get('budget', 'any')}"
-            )},
-        ])
-
-        # Execute tool calls if any
-        results = []
-        if response.tool_calls:
-            tool_node = ToolNode(flight_tools)
-            tool_results = await tool_node.ainvoke({"messages": [response]})
-            results = tool_results.get("messages", [])
-
-    return {
-        "messages": [response, *results],
-        "flights": _extract_options(results, "flight"),
-    }
+_llm = AzureChatOpenAI(
+    azure_deployment=_MODEL_DEPLOYMENT,
+    azure_endpoint=os.environ["AZURE_API_BASE"],
+    api_key=os.environ["AZURE_API_KEY"],
+    api_version="2024-12-01-preview",
+    temperature=0.2,
+    max_tokens=4000,
+).bind_tools(_tools)
 
 
-async def hotel_search(state: TravelState) -> dict:
-    """Search for hotels using MCP hotel tool."""
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
-
-    async with MultiServerMCPClient(MCP_SERVERS) as client:
-        tools = client.get_tools()
-        hotel_tools = [t for t in tools if "hotel" in t.name.lower()]
-        llm_with_tools = llm.bind_tools(hotel_tools)
-
-        response = await llm_with_tools.ainvoke([
-            {"role": "system", "content": "Search for hotels. Use available tools."},
-            {"role": "user", "content": (
-                f"Find hotels in {state.get('destination', 'unknown')} "
-                f"from {state.get('dates', {}).get('start', 'flexible')} "
-                f"to {state.get('dates', {}).get('end', 'flexible')} "
-                f"budget ${state.get('budget', 'any')}"
-            )},
-        ])
-
-        results = []
-        if response.tool_calls:
-            tool_node = ToolNode(hotel_tools)
-            tool_results = await tool_node.ainvoke({"messages": [response]})
-            results = tool_results.get("messages", [])
-
-    return {
-        "messages": [response, *results],
-        "hotels": _extract_options(results, "hotel"),
-    }
+class _TravelState(dict):
+    messages: Annotated[list, add_messages]
 
 
-async def itinerary_optimizer(state: TravelState) -> dict:
-    """Combine flights + hotels into an optimized itinerary."""
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
-
-    flights_summary = json.dumps(state.get("flights", []), indent=2)
-    hotels_summary = json.dumps(state.get("hotels", []), indent=2)
-
-    response = await llm.ainvoke([
-        {"role": "system", "content": (
-            "You are a travel itinerary optimizer. Given flight and hotel options, "
-            "create the best itinerary within the user's budget. Be specific about "
-            "prices, times, and recommendations. If options are limited, say so."
-        )},
-        {"role": "user", "content": (
-            f"Destination: {state.get('destination')}\n"
-            f"Dates: {json.dumps(state.get('dates', {}))}\n"
-            f"Budget: ${state.get('budget', 'flexible')}\n\n"
-            f"Flight options:\n{flights_summary}\n\n"
-            f"Hotel options:\n{hotels_summary}\n\n"
-            "Create the best itinerary."
-        )},
-    ])
-
-    return {
-        "messages": [response],
-        "itinerary": response.content,
-    }
+def _agent_node(state: _TravelState) -> dict:
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + list(state.get("messages", []))
+    return {"messages": [_llm.invoke(messages)]}
 
 
-async def clarification(state: TravelState) -> dict:
-    """Ask user for missing information."""
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.5)
-
-    response = await llm.ainvoke([
-        {"role": "system", "content": (
-            "The user's travel request is missing key details. "
-            "Ask a clear, specific follow-up question to get what you need."
-        )},
-        *state.get("messages", []),
-    ])
-
-    return {"messages": [response]}
+def _should_continue(state: _TravelState) -> str:
+    last = state.get("messages", [])[-1]
+    return "tools" if isinstance(last, AIMessage) and last.tool_calls else END
 
 
-# ── Routing logic ─────────────────────────────────────────────
-
-def route_after_intent(state: TravelState) -> str:
-    """Route based on classified intent."""
-    intent = state.get("intent", "ask_question")
-    destination = state.get("destination", "")
-
-    if intent == "book_trip" and destination:
-        return "flight_search"
-    elif intent in ("book_trip", "modify_trip") and not destination:
-        return "clarification"
-    else:
-        return "clarification"
-
-
-def route_after_itinerary(state: TravelState) -> str:
-    """Decide if itinerary is complete or needs more info."""
-    itinerary = state.get("itinerary", "")
-    if itinerary and len(itinerary) > 50:
-        return END
-    return "clarification"
-
-
-# ── Build the graph ───────────────────────────────────────────
-
-def build_graph() -> StateGraph:
-    """Construct the travel planner graph."""
-    graph = StateGraph(TravelState)
-
-    graph.add_node("intent_classifier", intent_classifier)
-    graph.add_node("flight_search", flight_search)
-    graph.add_node("hotel_search", hotel_search)
-    graph.add_node("itinerary_optimizer", itinerary_optimizer)
-    graph.add_node("clarification", clarification)
-
-    graph.set_entry_point("intent_classifier")
-
-    graph.add_conditional_edges("intent_classifier", route_after_intent)
-    graph.add_edge("flight_search", "hotel_search")
-    graph.add_edge("hotel_search", "itinerary_optimizer")
-    graph.add_conditional_edges("itinerary_optimizer", route_after_itinerary)
-    graph.add_edge("clarification", END)
-
+def _build_graph():
+    graph = StateGraph(_TravelState)
+    graph.add_node("agent", _agent_node)
+    graph.add_node("tools", _tool_node)
+    graph.set_entry_point("agent")
+    graph.add_conditional_edges("agent", _should_continue, {"tools": "tools", END: END})
+    graph.add_edge("tools", "agent")
     return graph.compile()
 
 
-# ── Convenience entry point ───────────────────────────────────
-
-_graph = None
-
-def get_graph():
-    global _graph
-    if _graph is None:
-        _graph = build_graph()
-    return _graph
+_graph = _build_graph()
 
 
-async def chat(message: str) -> str:
-    """Single-turn entry point: send a message, get a response."""
-    graph = get_graph()
-    result = await graph.ainvoke({
-        "messages": [HumanMessage(content=message)],
-    })
-    messages = result.get("messages", [])
-    # Return the last AI message
-    for msg in reversed(messages):
+def _build_graph():
+    graph = StateGraph(_TravelState)
+    graph.add_node("agent", _agent_node)
+    graph.add_node("tools", _tool_node)
+    graph.set_entry_point("agent")
+    graph.add_conditional_edges("agent", _should_continue, {"tools": "tools", END: END})
+    graph.add_edge("tools", "agent")
+    return graph.compile()
+
+
+_graph = _build_graph()
+
+
+# ── Entry point ───────────────────────────────────────────────
+
+def chat(message: str, history: Optional[list] = None) -> str:
+    """Invoke the LangGraph travel planner. Returns final assistant text."""
+    messages = []
+    if history:
+        for h in history:
+            role = h.get("role", "user")
+            content = h.get("content", "")
+            messages.append(HumanMessage(content=content) if role == "user" else AIMessage(content=content))
+    messages.append(HumanMessage(content=message))
+
+    result = _graph.invoke({"messages": messages})
+
+    for msg in reversed(result.get("messages", [])):
         if isinstance(msg, AIMessage) and msg.content:
             return msg.content
     return ""
 
 
-def chat_sync(message: str) -> str:
-    """Synchronous wrapper for chat()."""
-    return asyncio.run(chat(message))
-
-
-# ── Helpers ───────────────────────────────────────────────────
-
-def _extract_options(tool_messages: list, option_type: str) -> list[dict]:
-    """Extract structured options from tool result messages."""
-    options = []
-    for msg in tool_messages:
-        if isinstance(msg, ToolMessage):
-            try:
-                data = json.loads(msg.content)
-                if isinstance(data, list):
-                    options.extend(data)
-                elif isinstance(data, dict):
-                    options.append(data)
-            except (json.JSONDecodeError, TypeError):
-                pass
-    return options
+if __name__ == "__main__":
+    print(chat("Plan a week in Tokyo for under $3000"))
