@@ -1,7 +1,7 @@
 # Shared suite: generates policy + seeds once, all 3 approaches reuse them.
 # Run approach A (OTel) as the first run to generate policy+seeds.
 
-suite: travel-planner-3way-controlled
+suite: travel-planner-demo
 run: phoenix-otel
 risk: travel_planner_quality
 
@@ -36,7 +36,7 @@ pipeline:
       budget: 15
 
   rollout:
-    concurrency: 10
+    concurrency: 1
     target:
       callable: p2m.travel_target:target_langgraph
       trace:

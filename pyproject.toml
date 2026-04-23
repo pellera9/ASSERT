@@ -6,7 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "click>=8.0",
+  "crewai>=1.6.1",
+  "dspy>=2.6.13",
   "litellm>=1.79.1",
+  "llama-index>=0.14.21",
+  "llama-index-core>=0.14.21",
+  "llama-index-llms-openai>=0.7.5",
   "pydantic>=2.0",
   "python-dotenv>=1.2.1",
   "PyYAML>=6.0",
@@ -56,4 +61,4 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["p2m*"]
+include = ["p2m*", "examples*"]

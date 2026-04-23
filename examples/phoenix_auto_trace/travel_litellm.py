@@ -21,7 +21,7 @@ def chat(message: str) -> str:
     ]
 
     response = litellm.completion(
-        model="openai/gpt-4o",
+        model="azure/gpt-5.4-mini",
         messages=messages,
         tools=OPENAI_TOOLS,
         tool_choice="auto",
@@ -40,7 +40,7 @@ def chat(message: str) -> str:
             })
 
         response = litellm.completion(
-            model="openai/gpt-4o",
+            model="azure/gpt-5.4-mini",
             messages=messages,
             tools=OPENAI_TOOLS,
             tool_choice="auto",

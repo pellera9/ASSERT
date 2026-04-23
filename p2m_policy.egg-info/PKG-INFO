@@ -5,7 +5,12 @@ Summary: YAML-driven safety evaluation pipeline with LiteLLM-backed stages
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 Requires-Dist: click>=8.0
+Requires-Dist: crewai>=1.6.1
+Requires-Dist: dspy>=2.6.13
 Requires-Dist: litellm>=1.79.1
+Requires-Dist: llama-index>=0.14.21
+Requires-Dist: llama-index-core>=0.14.21
+Requires-Dist: llama-index-llms-openai>=0.7.5
 Requires-Dist: pydantic>=2.0
 Requires-Dist: python-dotenv>=1.2.1
 Requires-Dist: PyYAML>=6.0

@@ -12,10 +12,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 from p2m.config import ConfigError, load_config, load_runtime_context
 from p2m.core.config_model import RunManifest, SuiteMetadata
 from p2m.core.io import write_json
 from p2m.stages import STAGES
+
+load_dotenv()
 
 
 def _load_context(
