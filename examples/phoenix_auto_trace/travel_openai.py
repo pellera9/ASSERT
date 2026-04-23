@@ -9,10 +9,29 @@ from phoenix.otel import register
 register(auto_instrument=True)
 
 import json
-from openai import OpenAI
-from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT, OPENAI_TOOLS
+import os
 
-client = OpenAI()
+from dotenv import load_dotenv
+load_dotenv()
+
+from openai import AzureOpenAI, OpenAI  # noqa: E402
+from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT, OPENAI_TOOLS  # noqa: E402
+
+_MODEL = os.environ.get("P2M_TARGET_MODEL", "gpt-5.4-mini")
+
+
+def _get_client():
+    """Return AzureOpenAI client when Azure env vars are set, else OpenAI."""
+    if os.environ.get("AZURE_API_KEY") and os.environ.get("AZURE_API_BASE"):
+        return AzureOpenAI(
+            api_key=os.environ["AZURE_API_KEY"],
+            azure_endpoint=os.environ["AZURE_API_BASE"],
+            api_version="2024-12-01-preview",
+        )
+    return OpenAI()
+
+
+client = _get_client()
 
 
 def chat(message: str) -> str:
@@ -23,7 +42,7 @@ def chat(message: str) -> str:
     ]
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model=_MODEL,
         messages=messages,
         tools=OPENAI_TOOLS,
         tool_choice="auto",
@@ -41,7 +60,7 @@ def chat(message: str) -> str:
             })
 
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=_MODEL,
             messages=messages,
             tools=OPENAI_TOOLS,
             tool_choice="auto",

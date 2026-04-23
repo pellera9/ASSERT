@@ -40,21 +40,21 @@ always the same 2 lines. Mock tool responses come from `_tools.py`.
 | `openinference-instrumentation-llama-index` | LlamaIndex | `travel_llamaindex.py` |
 | `openinference-instrumentation-crewai` | CrewAI | `travel_crewai.py` |
 | `openinference-instrumentation-dspy` | DSPy | `travel_dspy.py` |
+| `openinference-instrumentation-openai-agents` | OpenAI Agents SDK | `travel_openai_agents.py` |
+| `openinference-instrumentation-instructor` | Instructor | `travel_instructor.py` |
+| `openinference-instrumentation-pydantic-ai` | PydanticAI | `travel_pydantic_ai.py` |
+| `openinference-instrumentation-autogen-agentchat` | AutoGen AgentChat | `travel_autogen.py` |
+| `openinference-instrumentation-smolagents` | smolagents | `travel_smolagents.py` |
+| `openinference-instrumentation-haystack` | Haystack | `travel_haystack.py` |
 
 ### Additional (no demo file, same 2-line pattern)
 | Package | Framework |
 |---------|-----------|
-| `openinference-instrumentation-openai-agents` | OpenAI Agents SDK |
 | `openinference-instrumentation-claude-agent-sdk` | Claude Agent SDK |
-| `openinference-instrumentation-haystack` | Haystack |
 | `openinference-instrumentation-guardrails` | Guardrails AI |
-| `openinference-instrumentation-instructor` | Instructor |
 | `openinference-instrumentation-mcp` | MCP |
 | `openinference-instrumentation-agno` | Agno Agents |
 | `openinference-instrumentation-beeai` | BeeAI |
-| `openinference-instrumentation-autogen-agentchat` | AutoGen AgentChat |
-| `openinference-instrumentation-pydantic-ai` | PydanticAI |
-| `openinference-instrumentation-smolagents` | smolagents |
 | `openinference-instrumentation-pipecat` | Pipecat |
 | `openinference-instrumentation-strands-agents` | Strands Agents |
 | `openinference-instrumentation-agentspec` | AgentSpec |

@@ -22,16 +22,33 @@ register(auto_instrument=True)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import asyncio
+import os
 from typing import Annotated, Sequence
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT
+
+
+def _get_llm():
+    """Return AzureChatOpenAI when Azure env vars are set, else ChatOpenAI."""
+    if os.environ.get("AZURE_API_KEY") and os.environ.get("AZURE_API_BASE"):
+        return AzureChatOpenAI(
+            azure_deployment=os.environ.get("P2M_AZURE_DEPLOYMENT", "gpt-5.4-mini"),
+            azure_endpoint=os.environ["AZURE_API_BASE"],
+            api_key=os.environ["AZURE_API_KEY"],
+            api_version="2024-12-01-preview",
+            temperature=0,
+        )
+    return ChatOpenAI(model=os.environ.get("P2M_TARGET_MODEL", "gpt-4o"), temperature=0)
 
 
 # ── Tools (simulated via shared module) ───────────────────────
@@ -78,7 +95,7 @@ class TravelState(dict):
 # ── Nodes ─────────────────────────────────────────────────────
 
 tools = [search_flights, search_hotels, check_weather, check_travel_advisories, validate_budget]
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+llm = _get_llm()
 llm_with_tools = llm.bind_tools(tools)
 
 

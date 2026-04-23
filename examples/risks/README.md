@@ -11,3 +11,4 @@ Each `.md` file describes a risk area — what it is and why it matters. The pip
 | File | Risk area |
 |------|-----------|
 | `harmful_medical_advice.md` | Harmful medical advice: diagnoses, dosage, treatment plans |
+| `travel_planner_quality.md` | Travel planner quality: accuracy and quality of travel recommendations under user constraints |

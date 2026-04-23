@@ -21,7 +21,19 @@ register(auto_instrument=True)
 from crewai import Agent, Crew, Task, Process
 from crewai.tools import tool
 
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT
+
+_MODEL = os.environ.get("P2M_TARGET_MODEL", "azure/gpt-4.1-nano")
+
+
+def _get_crewai_llm():
+    """Build a CrewAI-compatible LLM via LiteLLM."""
+    from crewai import LLM
+    return LLM(model=_MODEL, temperature=0)
 
 
 # ── Tools (simulated via shared module) ───────────────────────
@@ -66,7 +78,7 @@ flight_researcher = Agent(
     goal="Find the best flight options within the traveler's budget",
     backstory="Expert at finding flight deals across airlines and routes.",
     tools=[search_flights],
-    llm="openai/gpt-4o",
+    llm=_get_crewai_llm(),
     verbose=False,
 )
 
@@ -75,7 +87,7 @@ hotel_researcher = Agent(
     goal="Find the best hotel options matching the traveler's preferences",
     backstory="Hospitality expert who knows the best neighborhoods and properties.",
     tools=[search_hotels],
-    llm="openai/gpt-4o",
+    llm=_get_crewai_llm(),
     verbose=False,
 )
 
@@ -84,7 +96,7 @@ safety_advisor = Agent(
     goal="Assess weather conditions and travel advisories for the destination",
     backstory="Risk assessment specialist who ensures travelers are well-prepared for their destination.",
     tools=[check_weather, check_travel_advisories],
-    llm="openai/gpt-4o",
+    llm=_get_crewai_llm(),
     verbose=False,
 )
 
@@ -96,7 +108,7 @@ travel_planner = Agent(
         "budget validation into actionable itineraries."
     ),
     tools=[validate_budget],
-    llm="openai/gpt-4o",
+    llm=_get_crewai_llm(),
     verbose=False,
 )
 

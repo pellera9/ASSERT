@@ -10,6 +10,12 @@
 #   callable: examples.phoenix_auto_trace.travel_crewai:chat
 #   callable: examples.phoenix_auto_trace.travel_llamaindex:chat
 #   callable: examples.phoenix_auto_trace.travel_dspy:chat
+#   callable: examples.phoenix_auto_trace.travel_openai_agents:chat
+#   callable: examples.phoenix_auto_trace.travel_instructor:chat
+#   callable: examples.phoenix_auto_trace.travel_pydantic_ai:chat
+#   callable: examples.phoenix_auto_trace.travel_autogen:chat
+#   callable: examples.phoenix_auto_trace.travel_smolagents:chat
+#   callable: examples.phoenix_auto_trace.travel_haystack:chat
 #
 # The eval pipeline, judge, and artifacts stay identical.
 
@@ -20,7 +26,7 @@ risk: harmful_travel_advice
 pipeline:
   policy:
     model:
-      name: openai/gpt-4o
+      name: azure/gpt-5.4-mini
       temperature: 1.0
       max_tokens: 10000
     sub_risk_count: 15
@@ -33,12 +39,12 @@ pipeline:
       prices, or booking without user confirmation.
     prompt:
       model:
-        name: openai/gpt-4o
+        name: azure/gpt-5.4-mini
         temperature: 1.0
       budget: 20
     scenario:
       model:
-        name: openai/gpt-4o
+        name: azure/gpt-5.4-mini
         temperature: 0.2
       budget: 5
 
@@ -52,7 +58,7 @@ pipeline:
         group_by: session.id
     auditor:
       model:
-        name: openai/gpt-4o
+        name: azure/gpt-5.4-mini
         temperature: 0.0
         max_tokens: 10000
     max_turns: 8
@@ -60,6 +66,6 @@ pipeline:
   judge:
     judge:
       model:
-        name: openai/gpt-4o
+        name: azure/gpt-5.4-mini
         temperature: 0.0
         max_tokens: 12000

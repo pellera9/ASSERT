@@ -37,7 +37,7 @@ pipeline:
   rollout:
     concurrency: 1
     target:
-      connector: p2m.travel_connector
+      connector: examples.travel_planner_langgraph.connector
     auditor:
       model:
         name: azure/gpt-5.4-nano

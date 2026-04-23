@@ -1,4 +1,4 @@
-"""Connector target for Approach C demo.
+"""Connector target for Approach C — text-only visibility.
 
 Same LangGraph agent as A and B, but wrapped in the connector interface.
 Judge sees ConnectorResponse(text=str) — text only, no tool metadata.
@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from p2m.core.session import ConnectorResponse
-from p2m.travel_target import _invoke_langgraph
+from examples.travel_planner_langgraph.target import _invoke_langgraph
 
 
 class Adapter:

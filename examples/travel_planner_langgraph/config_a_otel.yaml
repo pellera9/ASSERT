@@ -38,7 +38,7 @@ pipeline:
   rollout:
     concurrency: 10
     target:
-      callable: p2m.travel_target:target_langgraph
+      callable: examples.travel_planner_langgraph.target:target_langgraph
       trace:
         backend: phoenix
         group_by: session.id

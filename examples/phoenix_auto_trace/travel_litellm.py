@@ -9,8 +9,15 @@ from phoenix.otel import register
 register(auto_instrument=True)
 
 import json
-import litellm
-from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT, OPENAI_TOOLS
+import os
+
+from dotenv import load_dotenv
+load_dotenv()
+
+import litellm  # noqa: E402
+from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT, OPENAI_TOOLS  # noqa: E402
+
+_MODEL = os.environ.get("P2M_TARGET_MODEL", "azure/gpt-5.4-mini")
 
 
 def chat(message: str) -> str:
@@ -21,7 +28,7 @@ def chat(message: str) -> str:
     ]
 
     response = litellm.completion(
-        model="azure/gpt-5.4-mini",
+        model=_MODEL,
         messages=messages,
         tools=OPENAI_TOOLS,
         tool_choice="auto",
@@ -40,7 +47,7 @@ def chat(message: str) -> str:
             })
 
         response = litellm.completion(
-            model="azure/gpt-5.4-mini",
+            model=_MODEL,
             messages=messages,
             tools=OPENAI_TOOLS,
             tool_choice="auto",

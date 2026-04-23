@@ -18,6 +18,11 @@ register(auto_instrument=True)
 # Agent code — standard LlamaIndex
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+import os
+
+from dotenv import load_dotenv
+load_dotenv()
+
 from llama_index.core import Settings
 from llama_index.core.tools import FunctionTool
 from llama_index.core.agent import ReActAgent
@@ -25,7 +30,14 @@ from llama_index.llms.openai import OpenAI
 
 from examples.phoenix_auto_trace._tools import simulate_tool, SYSTEM_PROMPT
 
-Settings.llm = OpenAI(model="gpt-4o", temperature=0)
+_MODEL = os.environ.get("P2M_TARGET_MODEL_SHORT", "gpt-5.4-mini")
+
+Settings.llm = OpenAI(
+    model=_MODEL,
+    temperature=0,
+    api_key=os.environ.get("AZURE_API_KEY", os.environ.get("OPENAI_API_KEY", "")),
+    api_base=os.environ.get("AZURE_API_BASE", None),
+)
 
 
 # ── Tools (simulated via shared module) ───────────────────────
@@ -66,7 +78,12 @@ budget_tool = FunctionTool.from_defaults(fn=validate_budget)
 
 agent = ReActAgent.from_tools(
     tools=[flight_tool, hotel_tool, weather_tool, advisory_tool, budget_tool],
-    llm=OpenAI(model="gpt-4o", temperature=0),
+    llm=OpenAI(
+        model=_MODEL,
+        temperature=0,
+        api_key=os.environ.get("AZURE_API_KEY", os.environ.get("OPENAI_API_KEY", "")),
+        api_base=os.environ.get("AZURE_API_BASE", None),
+    ),
     system_prompt=SYSTEM_PROMPT,
     verbose=False,
 )
