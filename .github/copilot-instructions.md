@@ -1,5 +1,43 @@
 # Copilot Instructions — Adaptive Eval (P2M)
 
+## Testing
+
+Four test tiers. When asked to "test", run Tier 2. When asked for "small test", run Tier 3.
+
+### Tier 1: Static (`uv run pytest -q`)
+
+Unit tests in `tests/`. No LLM calls, no API keys. Config validation, transcript schemas, OTel span conversion, CLI parsing. Run before every commit.
+
+```bash
+uv run pytest -q                                    # full suite (<30s)
+uv run pytest tests/test_framework_agnostic.py -q   # OTel-specific
+```
+
+### Tier 2: "test" — single demo integration
+
+Run LangGraph demo end-to-end with 2 seeds + `gpt-5.4-mini` judge. Verifies no runtime errors, traces captured, judge produces verdicts. Also test all 3 `group_by` levels (`session.id`, `trace.id`, `span.id`).
+
+**Config:** `sub_risk_count: 3`, `prompt.budget: 1`, `scenario.budget: 1`, `max_turns: 4`
+**Target:** `examples.travel_planner_langgraph.auto_trace:chat_sync`
+**Pass criteria:** 0 judge failures, `trace_events > 0`, `tools_called` non-empty
+**Latency:** 30s–90s
+
+### Tier 3: "small test" — two demos, 20 seeds
+
+Run LangGraph + NeurOSan with 20 seeds each (10 prompt + 10 scenario) + `gpt-5.4` judge. Validates both auto + custom instrumentation, failure mode coverage.
+
+**Config:** `sub_risk_count: 5`, `prompt.budget: 10`, `scenario.budget: 10`, `max_turns: 6`
+**Pass criteria:** 0 judge failures, ≥3 failure modes per demo, 5/5 sub-risks triggered
+**Latency:** 10–15 min
+
+### Tier 4: "bulk test" — all frameworks, 100 seeds
+
+Run all 8 Azure-compatible frameworks (OpenAI, LiteLLM, LangChain, LangGraph, DSPy, CrewAI, LangGraph multi-node, NeurOSan) with 100 seeds each + `gpt-5.4` judge. Overnight job.
+
+**Config:** `sub_risk_count: 10`, `prompt.budget: 20`, `scenario.budget: 80`, `max_turns: 8`, `concurrency: 3`
+**Pass criteria:** <5% judge failure rate, ≥8 failure modes per framework
+**Latency:** 1–4 hours
+
 ## Commands
 
 ```bash
