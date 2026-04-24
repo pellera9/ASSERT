@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import threading
 import uuid
 from typing import Any
 
@@ -106,8 +107,19 @@ class OTelTracedSession:
         }
 
     async def open(self) -> None:
+        import io
+        import sys
+
         module_path, func_name = self._callable_ref.rsplit(":", 1)
-        mod = importlib.import_module(module_path)
+        # Suppress Phoenix/OTel banner output during module import.
+        # Phoenix's register(verbose=True) prints a multi-line banner to
+        # stdout when the target module calls register() at import time.
+        _orig_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            mod = importlib.import_module(module_path)
+        finally:
+            sys.stdout = _orig_stdout
         self._callable = getattr(mod, func_name)
         sig = inspect.signature(self._callable)
         self._supports_history = "history" in sig.parameters
@@ -127,44 +139,59 @@ class OTelTracedSession:
         - ``session.id``: All spans → one aggregate (full conversation context)
         - ``trace.id``: Spans grouped by trace_id → per-trace events
         - ``span.id``: Each span → its own event (maximum granularity)
+
+        When using ``LiveOTelExporter`` (singleton, shared span buffer), the
+        clear-invoke-export cycle is serialized via a lock to prevent
+        concurrent sessions from contaminating each other's span data.
         """
-        # Clear spans from previous turn so we only capture this turn's execution
-        if self._live_exporter is not None:
-            self._live_exporter.clear()
+        # Acquire the live exporter lock for the entire clear-invoke-export
+        # cycle so concurrent OTelTracedSessions don't mix spans.
+        from p2m.core.otel import LiveOTelExporter
+        lock = LiveOTelExporter._lock if self._live_otel else None
+        if lock:
+            lock.acquire()
+        try:
+            # Clear spans from previous turn so we only capture this turn's execution
+            if self._live_exporter is not None:
+                self._live_exporter.clear()
 
-        user_text = ""
-        for msg in reversed(messages):
-            if msg.role == "user":
-                user_text = msg.text
-                break
+            user_text = ""
+            for msg in reversed(messages):
+                if msg.role == "user":
+                    user_text = msg.text
+                    break
 
-        turn_id = f"{self._session_id}_turn_{len(self._turn_traces)}"
+            turn_id = f"{self._session_id}_turn_{len(self._turn_traces)}"
 
-        # Invoke the callable (which triggers the instrumented agent)
-        if self._supports_history:
-            history = [
-                {"role": msg.role, "content": msg.text}
-                for msg in messages
-                if msg.role in ("user", "assistant")
-            ]
-            response_text = await invoke_callable(
-                self._callable,
-                user_text,
-                history=history,
-                timeout_s=self._message_timeout_s,
-            )
-        else:
-            response_text = await invoke_callable(
-                self._callable,
-                user_text,
-                timeout_s=self._message_timeout_s,
-            )
+            # Invoke the callable (which triggers the instrumented agent)
+            if self._supports_history:
+                history = [
+                    {"role": msg.role, "content": msg.text}
+                    for msg in messages
+                    if msg.role in ("user", "assistant")
+                ]
+                response_text = await invoke_callable(
+                    self._callable,
+                    user_text,
+                    history=history,
+                    timeout_s=self._message_timeout_s,
+                )
+            else:
+                response_text = await invoke_callable(
+                    self._callable,
+                    user_text,
+                    timeout_s=self._message_timeout_s,
+                )
 
-        if not isinstance(response_text, str):
-            response_text = str(response_text)
+            if not isinstance(response_text, str):
+                response_text = str(response_text)
 
-        # Collect traces for this turn
-        turn_spans = self._exporter.export_session(turn_id)
+            # Collect traces for this turn
+            turn_spans = self._exporter.export_session(turn_id)
+        finally:
+            if lock:
+                lock.release()
+
         validation = validate_spans(turn_spans)
 
         # Convert spans to events (tool call visibility + judge metadata)
