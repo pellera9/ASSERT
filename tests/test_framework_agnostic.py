@@ -417,9 +417,10 @@ class TestSpanValidation(unittest.TestCase):
         )
         result = validate_spans([span])
         self.assertFalse(result.valid)
-        self.assertTrue(any("openinference.span.kind" in m for m in result.missing_attributes))
+        self.assertTrue(any("openinference.span.kind" in w for w in result.warnings))
 
     def test_llm_span_missing_output(self):
+        """LLM span without output.value: warns but doesn't drop."""
         from p2m.core.otel import validate_spans, OTelSpan
         span = OTelSpan(
             trace_id="t1", span_id="s1", parent_span_id=None,
@@ -429,9 +430,10 @@ class TestSpanValidation(unittest.TestCase):
         )
         result = validate_spans([span])
         self.assertFalse(result.valid)
-        self.assertTrue(any("output.value" in m for m in result.missing_attributes))
+        self.assertTrue(any("output.value" in w for w in result.warnings))
 
     def test_llm_span_missing_recommended(self):
+        """LLM span without model name/tokens: warns, valid=False."""
         from p2m.core.otel import validate_spans, OTelSpan
         span = OTelSpan(
             trace_id="t1", span_id="s1", parent_span_id=None,
@@ -440,11 +442,12 @@ class TestSpanValidation(unittest.TestCase):
             attributes={"output.value": "response"},
         )
         result = validate_spans([span])
-        self.assertTrue(result.valid)  # still valid, just warnings
+        self.assertFalse(result.valid)  # missing model_name + tokens → warnings
         self.assertTrue(any("llm.model_name" in w for w in result.warnings))
         self.assertTrue(any("token counts" in w for w in result.warnings))
 
     def test_tool_span_missing_recommended(self):
+        """TOOL span without tool.name: warns, valid=False."""
         from p2m.core.otel import validate_spans, OTelSpan
         span = OTelSpan(
             trace_id="t1", span_id="s1", parent_span_id=None,
@@ -453,7 +456,7 @@ class TestSpanValidation(unittest.TestCase):
             attributes={},
         )
         result = validate_spans([span])
-        self.assertTrue(result.valid)
+        self.assertFalse(result.valid)
         self.assertTrue(any("tool.name" in w for w in result.warnings))
 
     def test_empty_spans_valid(self):
@@ -709,11 +712,11 @@ class TestOTelTracedSession(unittest.TestCase):
 
             result = asyncio.run(_run())
             self.assertEqual(result.text, "response to test")
-            self.assertIn("main_agent", result.raw["nodes_visited"])
-            self.assertIn("web_search", result.raw["tools_called"])
-            self.assertEqual(result.raw["llm_call_count"], 1)
-            self.assertEqual(result.raw["total_tokens"]["input"], 50)
-            self.assertEqual(result.raw["total_tokens"]["output"], 20)
+            self.assertIn("main_agent", result.raw["trace_metadata"]["nodes_visited"])
+            self.assertIn("web_search", result.raw["trace_metadata"]["tools_called"])
+            self.assertEqual(result.raw["trace_metadata"]["llm_call_count"], 1)
+            self.assertEqual(result.raw["trace_metadata"]["total_tokens"]["input"], 50)
+            self.assertEqual(result.raw["trace_metadata"]["total_tokens"]["output"], 20)
             self.assertTrue(result.raw["span_validation"]["valid"])
 
             # Interaction messages should include tool call events

@@ -235,6 +235,31 @@ def _spans_to_events(
             if node_name and node_name not in nodes_visited:
                 nodes_visited.append(node_name)
 
+        else:
+            # UNKNOWN or unrecognized span kind — include with available attributes
+            node_name = span.attributes.get(_LANGGRAPH_NODE_KEY, span.name)
+            if node_name and node_name not in nodes_visited:
+                nodes_visited.append(node_name)
+            input_text = span.attributes.get(_INPUT_VALUE_KEY, "")
+            output_text = span.attributes.get(_OUTPUT_VALUE_KEY, "")
+            if input_text or output_text:
+                events.append({
+                    "view": ["target", "combined"],
+                    "actor": "target",
+                    "edit": {
+                        "type": "add_message",
+                        "message": {
+                            "role": "assistant",
+                            "content": output_text or f"[{span.kind or 'unknown'}] {span.name}",
+                        },
+                    },
+                    "raw": {
+                        "_node": node_name,
+                        "_span_kind": span.kind,
+                        "_latency_ms": span.latency_ms,
+                    },
+                })
+
     aggregate = {
         "nodes_visited": nodes_visited,
         "tools_called": tools_called,
@@ -262,37 +287,37 @@ class SpanValidationResult:
 
 
 def validate_spans(spans: list[OTelSpan]) -> SpanValidationResult:
-    """Check spans have required OpenInference attributes for quality eval.
+    """Check spans for OpenInference attributes. Warns but never drops.
 
-    Required: ``openinference.span.kind``, ``output.value`` (for LLM spans).
-    Recommended: ``llm.model_name``, ``llm.token_count.*``, ``tool.name``
-    (for TOOL spans).
+    All spans pass through to the judge regardless of validation result.
+    The ``valid`` flag is informational — ``True`` means all recommended
+    attributes are present, ``False`` means some are missing but the spans
+    are still usable.
     """
-    missing: list[str] = []
     warnings: list[str] = []
 
     for span in spans:
         if span.kind == "UNKNOWN":
-            missing.append(f"span {span.span_id}: {_SPAN_KIND_KEY}")
+            warnings.append(f"span {span.span_id}: missing {_SPAN_KIND_KEY}")
 
         if span.kind == "LLM":
             if not span.attributes.get(_OUTPUT_VALUE_KEY):
-                missing.append(f"span {span.span_id}: {_OUTPUT_VALUE_KEY}")
+                warnings.append(f"span {span.span_id}: missing {_OUTPUT_VALUE_KEY}")
             if not span.attributes.get(_LLM_MODEL_KEY):
-                warnings.append(f"span {span.span_id}: missing recommended {_LLM_MODEL_KEY}")
+                warnings.append(f"span {span.span_id}: missing {_LLM_MODEL_KEY}")
             if (
                 not span.attributes.get(_LLM_INPUT_TOKENS_KEY)
                 and not span.attributes.get(_LLM_OUTPUT_TOKENS_KEY)
             ):
-                warnings.append(f"span {span.span_id}: missing recommended token counts")
+                warnings.append(f"span {span.span_id}: missing token counts")
 
         if span.kind == "TOOL":
             if not span.attributes.get(_TOOL_NAME_KEY):
-                warnings.append(f"span {span.span_id}: missing recommended {_TOOL_NAME_KEY}")
+                warnings.append(f"span {span.span_id}: missing {_TOOL_NAME_KEY}")
 
     return SpanValidationResult(
-        valid=len(missing) == 0,
-        missing_attributes=missing,
+        valid=len(warnings) == 0,
+        missing_attributes=[],
         warnings=warnings,
     )
 

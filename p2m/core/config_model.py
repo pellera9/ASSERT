@@ -66,10 +66,19 @@ class ToolsConfig:
         return asdict(self)
 
 
+VALID_TRACE_GROUP_BY = ("session.id", "trace.id", "span.id")
+
+
 @dataclass
 class TraceConfig:
     backend: str = "phoenix"
     group_by: str = "session.id"
+
+    def __post_init__(self) -> None:
+        if self.group_by not in VALID_TRACE_GROUP_BY:
+            raise ValueError(
+                f"trace.group_by must be one of {VALID_TRACE_GROUP_BY}, got: {self.group_by!r}"
+            )
 
 
 @dataclass

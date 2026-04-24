@@ -121,7 +121,13 @@ class OTelTracedSession:
         self._turn_traces = []
 
     async def run_turn(self, messages: list[Message]) -> TurnResult:
-        """Execute one turn: invoke target, capture traces, return rich result."""
+        """Execute one turn: invoke target, capture traces, return rich result.
+
+        The ``group_by`` setting controls trace granularity:
+        - ``session.id``: All spans → one aggregate (full conversation context)
+        - ``trace.id``: Spans grouped by trace_id → per-trace events
+        - ``span.id``: Each span → its own event (maximum granularity)
+        """
         # Clear spans from previous turn so we only capture this turn's execution
         if self._live_exporter is not None:
             self._live_exporter.clear()
@@ -161,32 +167,57 @@ class OTelTracedSession:
         turn_spans = self._exporter.export_session(turn_id)
         validation = validate_spans(turn_spans)
 
-        # Convert spans to p2m events
-        if turn_spans:
-            events, aggregate = _spans_to_events(turn_spans)
+        # Group spans according to group_by setting
+        if self._group_by == "span.id":
+            span_groups = [[s] for s in turn_spans]
+        elif self._group_by == "trace.id":
+            by_trace: dict[str, list] = {}
+            for s in turn_spans:
+                by_trace.setdefault(s.trace_id, []).append(s)
+            span_groups = list(by_trace.values())
+        else:
+            # session.id (default): all spans in one group
+            span_groups = [turn_spans] if turn_spans else []
+
+        # Convert each group to events + aggregate
+        all_events: list[dict[str, Any]] = []
+        combined_aggregate = {
+            "nodes_visited": [],
+            "tools_called": [],
+            "total_tokens": {"input": 0, "output": 0},
+            "total_latency_ms": 0.0,
+            "llm_call_count": 0,
+        }
+
+        for group in span_groups:
+            events, aggregate = _spans_to_events(group)
             events = compress_trace_for_judge(
                 events,
                 max_events=self._max_events_per_turn,
             )
-        else:
-            events = []
-            aggregate = {
-                "nodes_visited": [],
-                "tools_called": [],
-                "total_tokens": {"input": 0, "output": 0},
-                "total_latency_ms": 0,
-                "llm_call_count": 0,
-            }
+            all_events.extend(events)
+            # Merge aggregates
+            for n in aggregate["nodes_visited"]:
+                if n not in combined_aggregate["nodes_visited"]:
+                    combined_aggregate["nodes_visited"].append(n)
+            for t in aggregate["tools_called"]:
+                if t not in combined_aggregate["tools_called"]:
+                    combined_aggregate["tools_called"].append(t)
+            combined_aggregate["total_tokens"]["input"] += aggregate["total_tokens"]["input"]
+            combined_aggregate["total_tokens"]["output"] += aggregate["total_tokens"]["output"]
+            combined_aggregate["total_latency_ms"] += aggregate["total_latency_ms"]
+            combined_aggregate["llm_call_count"] += aggregate["llm_call_count"]
 
         # Record turn trace data
         turn_trace = {
             "turn_id": turn_id,
             "turn_index": len(self._turn_traces),
-            "events": events,
-            "aggregate": aggregate,
+            "group_by": self._group_by,
+            "group_count": len(span_groups),
+            "events": all_events,
+            "aggregate": combined_aggregate,
             "validation": {
                 "valid": validation.valid,
-                "missing": validation.missing_attributes,
                 "warnings": validation.warnings,
             },
         }
@@ -198,7 +229,7 @@ class OTelTracedSession:
         ]
 
         # Include trace events as intermediate steps (visible to judge)
-        for event in events:
+        for event in all_events:
             if event.get("actor") == "tool":
                 edit = event.get("edit", {})
                 interaction_messages.append({
@@ -223,8 +254,8 @@ class OTelTracedSession:
             "role": "assistant",
             "content": response_text,
             "raw": {
-                "trace_events": events,
-                "trace_metadata": aggregate,
+                "trace_events": all_events,
+                "trace_metadata": combined_aggregate,
             },
         })
 
@@ -236,8 +267,9 @@ class OTelTracedSession:
                 "session_id": self._session_id,
                 "turn_id": turn_id,
                 "runtime_mode": "otel_traced",
-                "trace_events": events,
-                "trace_metadata": aggregate,
+                "group_by": self._group_by,
+                "trace_events": all_events,
+                "trace_metadata": combined_aggregate,
                 "span_validation": turn_trace["validation"],
                 "accumulated_turns": len(self._turn_traces),
             },
