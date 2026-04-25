@@ -100,6 +100,13 @@ The `pipeline.rollout.target` block determines execution mode:
 
 Optional stages (`systematization`, `systematization_convert`) produce `systematization.json` → `policy.json`. These are separate from the standard 4-stage pipeline.
 
+## Security
+
+- Never push to any git remote other than `origin` without explicit user confirmation of the remote name.
+- Never create public repositories or change repository visibility settings.
+- Never commit `.env`, credentials, or API keys.
+- The remote `PRIVATE-NDA-CUSTOMERS` (if configured) is for private preview distribution only. Always confirm before pushing to it.
+
 ## Conventions
 
 - **Python 3.11+**. Type hints on public helpers. `snake_case` everywhere in Python/YAML. `PascalCase` in Svelte.
