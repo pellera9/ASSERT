@@ -15,9 +15,9 @@ uv run pytest tests/test_framework_agnostic.py -q   # OTel-specific
 
 ### Tier 2: "test" — single demo integration
 
-Run LangGraph demo end-to-end with 2 seeds + `gpt-5.4-mini` judge. Verifies no runtime errors, traces captured, judge produces verdicts. Also test all 3 `group_by` levels (`session.id`, `trace.id`, `span.id`).
+Run LangGraph demo end-to-end with 2 seeds + `gpt-5.4-mini` judge. Verifies no runtime errors, traces captured, judge produces verdicts.
 
-**Config:** `sub_risk_count: 3`, `prompt.budget: 1`, `scenario.budget: 1`, `max_turns: 4`
+**Config:** `sub_risk_count: 5`, `prompt.budget: 1`, `scenario.budget: 1`, `max_turns: 4`
 **Target:** `examples.travel_planner_langgraph.auto_trace:chat_sync`
 **Pass criteria:** 0 judge failures, `trace_events > 0`, `tools_called` non-empty
 **Latency:** 30s–90s
@@ -37,6 +37,52 @@ Run all 8 Azure-compatible frameworks (OpenAI, LiteLLM, LangChain, LangGraph, DS
 **Config:** `sub_risk_count: 10`, `prompt.budget: 20`, `scenario.budget: 80`, `max_turns: 8`, `concurrency: 3`
 **Pass criteria:** <5% judge failure rate, ≥8 failure modes per framework
 **Latency:** 1–4 hours
+
+## Regression Metrics
+
+Two categories of metrics gate PR quality. If science efficacy metrics regress, both prompt and code changes may be needed (scientists should review). If engineering quality metrics regress, code improvements are needed.
+
+### Pipeline Science Efficacy (canonical)
+
+Defined in `p2m_comparison/` metric scripts. These measure whether the pipeline produces scientifically valid evaluations:
+
+- **Construct Coverage** — % of risk-ontology labels appearing ≥1× in the generated test suite
+- **Separation Strength** — average weighted gap in violation rates between model pairs
+- **Signal Rate** — % of tests that produce a meaningful eval signal (not noise)
+- **Failure Variety** — average number of distinct failure types discovered
+- **Item Saturation** — redundancy per test (lower = less redundant)
+- **Discrimination Power** — ability to distinguish compliant from non-compliant behavior
+
+Auxiliary science metrics (derived from pipeline artifacts):
+- `policy_violation_rate`, `overrefusal_rate`, `judge_failure_rate`, `failure_mode_count`
+
+### Pipeline Engineering Quality
+
+These measure whether the pipeline runs reliably and efficiently:
+
+- **Stage wall times** — per-stage latency (policy, seeds, rollout, judge)
+- **Step failure counts** — seed generation failures, rollout timeouts, judge parse errors
+- **Unexpected/uncaught errors** — unhandled exceptions, crashes, stack traces
+- **Handled-but-unelegant issues** — unclear error messages, confusing output, UX papercuts
+
+### Golden Risk Specs for Regression Testing
+
+Two frozen risk specs cover both safety and quality evaluation:
+
+- `tests/regression/risks/travel_safety.md` — safety-focused: harmful travel advice, unsafe destinations, ignoring advisories (applied to travel planner demo)
+- `tests/regression/risks/travel_quality.md` — quality-focused: wrong tool calls, fabricated details, constraint violations, incoherence (applied to travel planner demo)
+
+### PR Regression Test (GitHub Action CI)
+
+On every PR that touches `p2m/` or `prompts/`:
+
+1. **Tier 1** — unit tests (always, <30s)
+2. **Tier 4 regression** — full pipeline on both risk specs, freeze risk spec only, let policy→seeds→rollout→judge all run. Default: 50 seeds (PR author can override via label `seeds:20` or `seeds:100`)
+3. **Statistical comparison** — paired t-test (same seeds, two commits) on science efficacy metrics. No external dependencies — implement t-test inline using `scipy.stats.ttest_rel`
+4. **Gate decision:**
+   - **Block PR** if any science efficacy metric shows Degraded + p < 0.05
+   - **Warn** if Inconclusive (p > 0.05 but negative trend) or <10 samples
+   - **Pass** if Improved or no significant change
 
 ## Commands
 
