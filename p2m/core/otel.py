@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -450,6 +451,7 @@ class LiveOTelExporter:
     _instance: "LiveOTelExporter | None" = None
     _setup_done: bool = False
     _sdk_exporter: Any = None
+    _lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> "LiveOTelExporter":
         if cls._instance is None:
@@ -822,6 +824,9 @@ def auto_select_extraction_mode(spans: list[OTelSpan]) -> str:
     if not spans:
         return ExtractionMode.FLAT
 
+    # NOTE: OpenInference does not currently define an "AGENT" span kind;
+    # agent-level spans use "CHAIN". This check is forward-looking for when
+    # the convention may add an explicit AGENT kind.
     agent_spans = [s for s in spans if s.kind == "AGENT"]
     tree = build_span_tree(spans)
     max_depth = max((r.depth for r in tree), default=0) if tree else 0

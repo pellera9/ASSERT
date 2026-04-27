@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import click
+
 from p2m.config import resolve_stage_paths
 from p2m.core.async_utils import gather_limited
 from p2m.core.io import METRICS_FILE, SCORES_FILE, TRANSCRIPTS_FILE
@@ -47,8 +49,9 @@ def write_metrics(
         {
             key
             for row in records
-            for key, value in (((row.get("verdict") or {}).get("dimensions")) or {}).items()
-            if isinstance(row.get("verdict"), dict) and is_valid_event_flag(value)
+            if isinstance(row.get("verdict"), dict)
+            for key, value in ((row["verdict"].get("dimensions")) or {}).items()
+            if is_valid_event_flag(value)
         }
     )
 
@@ -256,16 +259,27 @@ async def run_judge(
             "raw": judge_result["raw"],
         }
 
+    _judge_done = 0
+    _judge_total = len(rows)
+
     async def worker(item: tuple[int, dict[str, Any]]) -> dict[str, Any]:
         """Wrap row scoring so concurrent execution returns structured errors."""
+        nonlocal _judge_done
         output_index, row = item
         try:
-            return await score_row(output_index, row)
+            result = await score_row(output_index, row)
         except Exception as exc:
-            return {
+            result = {
                 "output_index": output_index,
                 "error": exc,
             }
+        _judge_done += 1
+        kind = row.get("kind", "")
+        label = row.get("sub_risk") or row.get("risk") or row.get("seed_id", "")
+        kind_tag = f"[{kind}] " if kind else ""
+        status = "✓" if result.get("error") is None else f"✗ {type(result['error']).__name__}"
+        click.echo(f"  judge [{_judge_done}/{_judge_total}] {status} {kind_tag}{label}", err=True)
+        return result
 
     results = sorted(
         await gather_limited(
@@ -275,21 +289,45 @@ async def run_judge(
         ),
         key=lambda result: result["output_index"],
     )
+
+    # Separate successes from errors. Content filter and LLM errors are
+    # recorded as judge failures rather than crashing the entire stage,
+    # because the eval tool generates adversarial prompts by design and
+    # Azure content filters will routinely trigger on them.
     successful_results = [result for result in results if result.get("error") is None]
+    error_results = [result for result in results if result.get("error") is not None]
+
+    for result in error_results:
+        error = result["error"]
+        idx = result["output_index"]
+        error_row = {
+            "kind": rows[idx].get("kind", ""),
+            "seed_id": rows[idx].get("seed_id", ""),
+            "risk": rows[idx].get("risk", ""),
+            "sub_risk": rows[idx].get("sub_risk", ""),
+            "permissible": get_permissible_flag(rows[idx], default=True),
+            "judge_model": judge_model,
+            "target": rows[idx].get("target", ""),
+            "auditor_model": rows[idx].get("auditor_model", ""),
+            "judge_status": "error",
+            "judge_error": str(error),
+            "verdict": "error",
+        }
+        successful_results.append({"score_row": error_row, "output_index": idx})
+        click.echo(f"  ⚠ Row {idx} judge error (skipped): {type(error).__name__}: {error}", err=True)
+
+    successful_results.sort(key=lambda r: r["output_index"])
     score_rows = [result["score_row"] for result in successful_results]
     scores_path = out_dir / SCORES_FILE
     write_jsonl(scores_path, score_rows)
     metrics_path = out_dir / METRICS_FILE
     write_metrics(score_rows, metrics_path, policy_raw=policy_raw)
-    for result in results:
-        error = result.get("error")
-        if error is not None:
-            raise error
     return {
         "scores_path": str(scores_path),
         "metrics_path": str(metrics_path),
-        "count": len(results),
-        "judge_failures": sum(1 for result in successful_results if result["judge_status"] != "ok"),
+        "count": len(score_rows),
+        "judge_failures": sum(1 for r in score_rows if r.get("judge_status") != "ok"),
+        "judge_errors": len(error_results),
     }
 
 
@@ -318,4 +356,10 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, str]:
     return {
         "scores_path": result["scores_path"],
         "metrics_path": result["metrics_path"],
+        "_summary": {
+            "count": result.get("count", 0),
+            "failures": result.get("judge_failures", 0),
+            "errors": result.get("judge_errors", 0),
+            "judge_model": ctx["evaluation"].judge.model if ctx.get("evaluation") else "",
+        },
     }
