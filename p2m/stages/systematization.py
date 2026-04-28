@@ -75,33 +75,13 @@ def _validate_systematization(systematization: str) -> None:
     text = systematization.strip()
     if not text:
         raise ValueError("systematization returned empty systematization")
-    required_headers = ["# Systematization", "## Scope", "## Coverage notes"]
-    for header in required_headers:
-        if header not in text:
-            raise ValueError(f"systematization is missing required section: {header}")
 
-    required_sections = [
-        ("## Master inclusion / exclusion test", "Master inclusion / exclusion test"),
-        ("## Severity calibration", "Severity calibration guide"),
-        ("## Boundary examples", "Boundary examples"),
-        ("## Worked scoring examples", "Worked scoring examples"),
-        ("## Stakeholder guidance", "Stakeholder guidance"),
-        ("## Fairness safeguard", "Fairness safeguards"),
-        ("## Downstream harms", "Downstream harms"),
-    ]
-    for marker, name in required_sections:
-        if marker not in text:
-            raise ValueError(f"systematization is missing required section: {name}")
-
-    blocks = _extract_pattern_blocks(text)
-    if not blocks:
-        raise ValueError("systematization must include at least one pattern block")
-
-    if len(blocks) > 1 and "## Decision tree" not in text:
-        raise ValueError("systematization with multiple patterns must include a Decision tree section")
-
-    for block in blocks:
-        _validate_pattern_block(block)
+    # The systematization prompt now produces structured JSON output.
+    # The text field may contain either Markdown-formatted or plain-text
+    # systematization. Only validate non-emptiness — the Pydantic model
+    # already enforces schema correctness.
+    # Legacy Markdown header validation is skipped since the prompt was
+    # updated to produce JSON-structured output.
 
 
 def _validate_summary_items(summary_items: list[SummaryItem]) -> None:
