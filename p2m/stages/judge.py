@@ -240,6 +240,8 @@ async def run_judge(
     return {
         "scores_path": str(scores_path),
         "count": len(completed_keys) + written_rows,
+        "new_count": written_rows,
+        "cached_count": len(completed_keys),
         "judge_failures": judge_failures,
     }
 
@@ -268,4 +270,10 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, str]:
     )
     return {
         "scores_path": result["scores_path"],
+        "_summary": {
+            "count": result.get("count", 0),
+            "new_count": result.get("new_count", 0),
+            "cached_count": result.get("cached_count", 0),
+            "failures": result.get("judge_failures", 0),
+        },
     }
