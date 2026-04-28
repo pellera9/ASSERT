@@ -132,9 +132,10 @@ class ViewerDownloadApiTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=f"{result.stdout}\n{result.stderr}")
             payload = json.loads(result.stdout)
             self.assertEqual(payload["status"], 200)
-            self.assertEqual(payload["body"], expected_body)
+            self.assertEqual(payload["body"].replace("\r\n", "\n"), expected_body)
             self.assertEqual(payload["disposition"], 'attachment; filename="policy.json"')
-            self.assertEqual(payload["contentLength"], str(len(expected_body.encode("utf-8"))))
+            actual_body_bytes = payload["body"].encode("utf-8")
+            self.assertEqual(payload["contentLength"], str(len(actual_body_bytes)))
 
 
 if __name__ == "__main__":

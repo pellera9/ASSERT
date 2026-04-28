@@ -225,7 +225,7 @@ def run_pipeline(
     try:
         ctx = _load_context(config=config)
         ctx["strict"] = strict
-    except ConfigError as exc:
+    except (ConfigError, ValueError) as exc:
         print(f"[config error] {exc}", file=sys.stderr)
         return 1
 
