@@ -1,5 +1,7 @@
 
 
+> **Status: Productizing as OSS.** This repo is being prepared for open-source release. The target product spec is [`docs/adaptive-eval-spec.md`](docs/adaptive-eval-spec.md). Current code works end-to-end but naming, config fields, and SDK surface are in active migration.
+
 # Adaptive Eval - A Requirement-driven AI Test Harness
 
 ## Motivation
@@ -10,9 +12,18 @@ In the AI development lifecycle, engineers need constant iterations in the pre-d
 3. **Opaque artifacts** — Results are trapped in proprietary portals with no local inspection or CI integration.
 4. **Generic benchmarks** — Tests measure general capabilities rather than requirement-specific behaviors.
 
-Responsible AI development lifecycle share the same loop with GenAI Ops: identify -> map -> measurements -> mitigate in an iterative loop. Requirement-driven evaluation automates **identification, mapping, and measurements of behaviors specific to the requirements of the AI applications with human in the loop**, compared to generic "static evals". 
+Responsible AI development lifecycle share the same loop with GenAI Ops: identify -> map -> measurements -> mitigate in an iterative loop. Requirement-driven evaluation automates **identification, mapping, and measurements of behaviors specific to the requirements of the AI applications with human in the loop**, compared to generic "static evals". To this end, we developed adaptive eval as an open-source evaluation tool to address these gaps that allows engineers to:
 
-To this end, we developed adaptive eval as an open-source evaluation tool to address these gaps that allows engineers to write evals driven by a YAML spec (e.g., testing requirements or policies). You can use the following to get started:
+
+<img width="1600" height="900" alt="image" src="https://github.com/user-attachments/assets/8f85c0ef-e18b-4c53-a0d6-f66eca750ced" />
+
+- Define requirement-specific **behavior definitions** for their use case
+- Generate representative **eval set** including multi-turn **conversations** to elicit failure modes
+- Execute evaluations against **any target** (hosted models, tool-using agents, external frameworks)
+- Inspect **portable artifacts** directly without a service dependency
+- Iterate quickly from failure signal to product improvement
+
+This pipeline is backed by a science project called P2M. You can use the following to get started:
 
 ## Policy to Metric (P2M)
 
@@ -20,7 +31,7 @@ To this end, we developed adaptive eval as an open-source evaluation tool to add
   <img src="logo.jpg" alt="p2m" width="100%">
 </p>
 
-**p2m** (policy-to-measurements) is a spec-driven evaluation framework for language models and agents. It tests whether a target handles failure modes (your product risks) correctly: answering permissible requests and declining not-permissible ones.
+**p2m** (policy-to-measurements) is a safety evaluation framework for language models and agents. It tests whether a target handles risky requests correctly: answering permissible requests and declining not-permissible ones.
 
 It runs a four-stage pipeline:
 

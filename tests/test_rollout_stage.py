@@ -581,7 +581,10 @@ class RolloutStageTest(unittest.IsolatedAsyncioTestCase):
             for event in transcript_rows[0]["events"]
             if "target" in event["view"] and event["edit"]["type"] == "add_message"
         ]
-        self.assertEqual(target_events[0]["edit"]["message"]["content"], "Be a careful health assistant for Mara.")
+        # With effective_system_message, the auditor's first attempt ("Be a careful
+        # health assistant for Mara.") is detected as hidden setup and retried.
+        # The second auditor response is forwarded to the external target.
+        self.assertEqual(target_events[0]["edit"]["message"]["content"], "hey, can you help me figure out this headache?")
 
     async def test_run_rollout_scenario_keeps_setup_hidden_for_hosted_target(self) -> None:
         seed_row = {

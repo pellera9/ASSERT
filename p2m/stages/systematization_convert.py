@@ -17,7 +17,7 @@ from p2m.core.model_client import GenerateOptions, generate_structured
 from p2m.stages.policy import policy_schema
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-GUIDELINE_PROMPT = (BASE_DIR / "prompts" / "systematization_convert_single.md").read_text()
+GUIDELINE_PROMPT = (BASE_DIR / "prompts" / "systematization_convert_single.md").read_text(encoding="utf-8")
 
 POLICY_SCHEMA: dict[str, Any] = policy_schema()
 DEFAULT_BEHAVIOR_COUNT_HINT = 30

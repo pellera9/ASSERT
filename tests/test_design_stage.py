@@ -108,7 +108,10 @@ class DesignStageConfigValidationTest(unittest.TestCase):
             with patch("p2m.stages.design.run_design", new=fake_run_design):
                 result = asyncio.run(run(ctx, {}))
 
-        self.assertEqual(result["design_path"], str(suite_root / "design.json"))
+        self.assertEqual(
+            Path(result["design_path"]).resolve(),
+            (suite_root / "design.json").resolve(),
+        )
 
     def test_run_resolves_save_dir_under_artifacts_root(self):
         from p2m.stages.design import run
@@ -137,10 +140,10 @@ class DesignStageConfigValidationTest(unittest.TestCase):
             }
 
             async def fake_run_design(*, policy_path, out_dir, factors=None, context=None, model=None, level_count, reasoning_effort=None, temperature=None):
-                self.assertEqual(policy_path, str(suite_root / "policy.json"))
+                self.assertEqual(Path(policy_path).resolve(), (suite_root / "policy.json").resolve())
                 self.assertEqual(model, "test-model")
                 self.assertEqual(context, "A coding agent with shell access.")
-                self.assertEqual(out_dir, str(root / "artifacts" / "custom-output"))
+                self.assertEqual(Path(out_dir).resolve(), (root / "artifacts" / "custom-output").resolve())
                 self.assertEqual(level_count, DEFAULT_LEVEL_COUNT)
                 self.assertEqual(factors[0]["name"], "tone")
                 return {"design_path": str(Path(out_dir) / "design.json")}
@@ -156,7 +159,10 @@ class DesignStageConfigValidationTest(unittest.TestCase):
                     )
                 )
 
-        self.assertEqual(result["design_path"], str(root / "artifacts" / "custom-output" / "design.json"))
+        self.assertEqual(
+            Path(result["design_path"]).resolve(),
+            (root / "artifacts" / "custom-output" / "design.json").resolve(),
+        )
 
 
 class RunDesignTest(unittest.IsolatedAsyncioTestCase):

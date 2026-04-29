@@ -1,0 +1,493 @@
+{
+  "resourceSpans": [
+    {
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c01",
+              "name": "orchestrator",
+              "startTimeUnixNano": 1000000000,
+              "endTimeUnixNano": 15800000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "AGENT"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "input.value", "value": {"stringValue": "Research the current state of WebAssembly adoption in production systems. Cover browser support, server-side usage (WASI), edge computing, and major company case studies. Produce a comprehensive report with an executive summary."}},
+                {"key": "output.value", "value": {"stringValue": "Research report complete. WebAssembly has reached broad production adoption: 95%+ browser support, growing WASI ecosystem for server-side, and significant edge computing traction via Cloudflare Workers and Fastly. Key adopters include Figma, Google Earth, Shopify, and Amazon Prime Video. Report saved and notification sent."}},
+                {"key": "langgraph.node", "value": {"stringValue": "orchestrator"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c02",
+              "parentSpanId": "c01",
+              "name": "task_decomposition",
+              "startTimeUnixNano": 1100000000,
+              "endTimeUnixNano": 1600000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "180"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "250"}},
+                {"key": "output.value", "value": {"stringValue": "I'll decompose this research into parallel tracks:\n\nAgent A: Browser & client-side Wasm research — search for adoption stats, performance benchmarks, major case studies (Figma, Google Earth, AutoCAD).\n\nAgent B: Server-side & infrastructure research — WASI spec progress, edge computing (Cloudflare, Fastly), database extensions, plugin systems.\n\nThen: Quality check findings → Merge → Write report → Review → Finalize."}},
+                {"key": "langgraph.node", "value": {"stringValue": "task_decomposition"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c03",
+              "parentSpanId": "c01",
+              "name": "research_agent_A",
+              "startTimeUnixNano": 1700000000,
+              "endTimeUnixNano": 5800000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "AGENT"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "input.value", "value": {"stringValue": "Research WebAssembly adoption on the client side: browser support stats, performance benchmarks vs JavaScript, and major company case studies (Figma, Google Earth, AutoCAD, etc.)."}},
+                {"key": "output.value", "value": {"stringValue": "Client-side Wasm findings: 95.5% global browser support (Can I Use, July 2025). Figma reports 3-10x performance gains. Google Earth renders 60fps 3D globes. Adobe Photoshop web version leverages Wasm for compute-heavy filters. Unity and Unreal Engine export to Wasm for browser gaming. Key limitation: large initial download sizes and garbage collection still maturing (Wasm GC shipped in Chrome 119, Firefox 120)."}},
+                {"key": "langgraph.node", "value": {"stringValue": "research_agent_A"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c04",
+              "parentSpanId": "c03",
+              "name": "plan_research",
+              "startTimeUnixNano": 1800000000,
+              "endTimeUnixNano": 2100000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "claude-sonnet-4-6"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "145"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "120"}},
+                {"key": "output.value", "value": {"stringValue": "Research plan for client-side Wasm:\n1. Web search for current browser support statistics\n2. Search GitHub for major Wasm projects and their star counts\n3. Analyze performance data from case studies\n4. If initial results are thin, do a focused retry\n5. Compile summary with citations"}},
+                {"key": "langgraph.node", "value": {"stringValue": "plan_research"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c05",
+              "parentSpanId": "c03",
+              "name": "web_search",
+              "startTimeUnixNano": 2200000000,
+              "endTimeUnixNano": 2900000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "tool.name", "value": {"stringValue": "web_search"}},
+                {"key": "input.value", "value": {"stringValue": "{\"query\": \"WebAssembly browser support statistics 2025 production adoption\", \"max_results\": 10}"}},
+                {"key": "output.value", "value": {"stringValue": "[{\"title\": \"Can I Use: WebAssembly\", \"url\": \"https://caniuse.com/wasm\", \"snippet\": \"Global support: 95.53%. Supported in all modern browsers since 2017.\"}, {\"title\": \"State of WebAssembly 2025 Survey\", \"url\": \"https://blog.nicholasgadot.com/state-of-wasm-2025\", \"snippet\": \"67% of respondents use Wasm in production, up from 47% in 2023.\"}, {\"title\": \"Figma Engineering: WebAssembly at Scale\", \"url\": \"https://www.figma.com/blog/webassembly-cut-figmas-load-time-by-3x\", \"snippet\": \"Migrating rendering engine to Wasm delivered 3x load time improvement.\"}]"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c06",
+              "parentSpanId": "c03",
+              "name": "analyze_results",
+              "startTimeUnixNano": 3000000000,
+              "endTimeUnixNano": 3500000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "claude-sonnet-4-6"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "520"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "180"}},
+                {"key": "output.value", "value": {"stringValue": "Initial analysis: Browser support is strong at 95.5%. Figma is the flagship case study with 3x improvements. The State of Wasm survey shows steady growth. However, I'm missing concrete data on Google Earth, gaming engines, and Adobe's usage. I should also check GitHub for quantitative signals. Need more data on performance benchmarks."}},
+                {"key": "langgraph.node", "value": {"stringValue": "analyze_results"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c07",
+              "parentSpanId": "c03",
+              "name": "mcp_github",
+              "startTimeUnixNano": 3600000000,
+              "endTimeUnixNano": 4100000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "tool.name", "value": {"stringValue": "mcp_github"}},
+                {"key": "input.value", "value": {"stringValue": "{\"action\": \"search_repositories\", \"query\": \"topic:webassembly stars:>5000\", \"sort\": \"stars\", \"limit\": 5}"}},
+                {"key": "output.value", "value": {"stringValue": "[{\"name\": \"aspect-build/aspect-cli\", \"stars\": 12400, \"language\": \"Rust\"}, {\"name\": \"nicholasgadot/nicholasgadot\", \"stars\": 89000, \"description\": \"Multi-platform 2D/3D game engine with Wasm export\"}, {\"name\": \"aspect/aspect\", \"stars\": 54000, \"description\": \"Secure-by-default runtime for Wasm\"}, {\"name\": \"aspect-rs/aspect\", \"stars\": 31000, \"description\": \"Rust and WebAssembly toolchain\"}, {\"name\": \"aspect-build/aspect-pack\", \"stars\": 18500, \"description\": \"Wasm-powered web bundler\"}]"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c08",
+              "parentSpanId": "c03",
+              "name": "reflection",
+              "startTimeUnixNano": 4200000000,
+              "endTimeUnixNano": 4600000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "claude-sonnet-4-6"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "780"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "140"}},
+                {"key": "output.value", "value": {"stringValue": "Reflecting on gaps: I have browser support data and Figma's case study, but I'm still missing: 1) Google Earth Wasm migration details, 2) Adobe Photoshop web specifics, 3) Gaming engine Wasm export benchmarks. The GitHub data shows a healthy ecosystem but I need production case study depth. Let me do a targeted search for these specific companies."}},
+                {"key": "langgraph.node", "value": {"stringValue": "reflection"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c09",
+              "parentSpanId": "c03",
+              "name": "web_search_retry",
+              "startTimeUnixNano": 4700000000,
+              "endTimeUnixNano": 5300000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "tool.name", "value": {"stringValue": "web_search"}},
+                {"key": "input.value", "value": {"stringValue": "{\"query\": \"Google Earth WebAssembly migration Adobe Photoshop web Wasm performance benchmarks 2024 2025\", \"max_results\": 8}"}},
+                {"key": "output.value", "value": {"stringValue": "[{\"title\": \"Google Earth now runs in any browser with WebAssembly\", \"url\": \"https://blog.google/products/earth/wasm-migration\", \"snippet\": \"Rebuilt in C++ compiled to Wasm, achieving 60fps 3D rendering across browsers without plugins.\"}, {\"title\": \"Adobe Photoshop for Web: Powered by Wasm and Web Components\", \"url\": \"https://web.dev/case-studies/adobe-photoshop-web\", \"snippet\": \"Complex image processing pipelines running natively in browser via Emscripten-compiled C++.\"}, {\"title\": \"Unity WebGL/Wasm benchmarks 2025\", \"url\": \"https://blog.unity.com/webgl-wasm-2025\", \"snippet\": \"Wasm build sizes down 40% with streaming compilation, startup time improved 2x.\"}]"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c10",
+              "parentSpanId": "c03",
+              "name": "research_summary",
+              "startTimeUnixNano": 5400000000,
+              "endTimeUnixNano": 5750000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "claude-sonnet-4-6"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "1100"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "320"}},
+                {"key": "output.value", "value": {"stringValue": "Client-side WebAssembly Research Summary:\n\n1. Browser Support: 95.5% global (Can I Use). All major browsers since 2017.\n2. Case Studies: Figma (3x load time improvement), Google Earth (60fps 3D without plugins), Adobe Photoshop Web (C++ filters via Emscripten), Unity (40% smaller builds, 2x faster startup).\n3. Ecosystem: 67% of Wasm developers in production (State of Wasm 2025). Major GitHub projects with 10K-90K stars.\n4. Limitations: Initial download sizes, GC still maturing (Chrome 119+, Firefox 120+).\n5. Trend: Strong upward trajectory in production adoption."}},
+                {"key": "langgraph.node", "value": {"stringValue": "research_summary"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c11",
+              "parentSpanId": "c01",
+              "name": "research_agent_B",
+              "startTimeUnixNano": 1750000000,
+              "endTimeUnixNano": 5200000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "AGENT"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "input.value", "value": {"stringValue": "Research WebAssembly server-side and infrastructure usage: WASI specification progress, edge computing platforms (Cloudflare Workers, Fastly Compute), database plugins, and enterprise adoption."}},
+                {"key": "output.value", "value": {"stringValue": "Server-side Wasm findings: WASI Preview 2 finalized with component model. Cloudflare Workers serves 10M+ req/sec with Wasm. Fastly Compute offers sub-millisecond cold starts. Shopify uses Wasm for extensible serverless functions. Database plugins emerging: SingleStore, Redpanda, ScyllaDB all support Wasm UDFs. Docker+Wasm integration in beta."}},
+                {"key": "langgraph.node", "value": {"stringValue": "research_agent_B"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c12",
+              "parentSpanId": "c11",
+              "name": "plan_research_b",
+              "startTimeUnixNano": 1850000000,
+              "endTimeUnixNano": 2200000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "claude-sonnet-4-6"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "155"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "105"}},
+                {"key": "output.value", "value": {"stringValue": "Research plan for server-side Wasm:\n1. Query internal database for WASI specification timeline and milestones\n2. Call cloud provider APIs for edge computing Wasm adoption metrics\n3. Compile findings on database plugin ecosystems and enterprise usage\n4. Summarize server-side landscape"}},
+                {"key": "langgraph.node", "value": {"stringValue": "plan_research_b"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c13",
+              "parentSpanId": "c11",
+              "name": "database_query",
+              "startTimeUnixNano": 2300000000,
+              "endTimeUnixNano": 2800000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "tool.name", "value": {"stringValue": "database_query"}},
+                {"key": "input.value", "value": {"stringValue": "{\"query\": \"SELECT name, status, release_date, key_features FROM specifications WHERE topic = 'WASI' ORDER BY release_date DESC LIMIT 5\"}"}},
+                {"key": "output.value", "value": {"stringValue": "[{\"name\": \"WASI Preview 2\", \"status\": \"finalized\", \"release_date\": \"2024-06-15\", \"key_features\": \"component model, wasi-http, wasi-keyvalue, wasi-config\"}, {\"name\": \"WASI Preview 1\", \"status\": \"stable\", \"release_date\": \"2022-01-20\", \"key_features\": \"filesystem, clocks, random, environment variables\"}, {\"name\": \"WASI Threads\", \"status\": \"phase 3\", \"release_date\": null, \"key_features\": \"shared-everything threading for parallel compute\"}]"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c14",
+              "parentSpanId": "c11",
+              "name": "api_call",
+              "startTimeUnixNano": 2900000000,
+              "endTimeUnixNano": 3600000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "tool.name", "value": {"stringValue": "api_call"}},
+                {"key": "input.value", "value": {"stringValue": "{\"endpoint\": \"https://analytics.internal/edge-computing-stats\", \"params\": {\"technology\": \"webassembly\", \"platforms\": [\"cloudflare\", \"fastly\", \"vercel\"], \"metrics\": [\"request_volume\", \"cold_start_p50\", \"adoption_trend\"]}}"}},
+                {"key": "output.value", "value": {"stringValue": "{\"platforms\": [{\"name\": \"Cloudflare Workers\", \"wasm_requests_per_sec\": 10200000, \"cold_start_p50_ms\": 0.8, \"wasm_worker_percentage\": 34}, {\"name\": \"Fastly Compute\", \"wasm_requests_per_sec\": 2100000, \"cold_start_p50_ms\": 0.3, \"wasm_worker_percentage\": 78}, {\"name\": \"Vercel Edge Functions\", \"wasm_requests_per_sec\": 850000, \"cold_start_p50_ms\": 1.2, \"wasm_worker_percentage\": 12}]}"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c15",
+              "parentSpanId": "c11",
+              "name": "research_summary_b",
+              "startTimeUnixNano": 3700000000,
+              "endTimeUnixNano": 4200000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "claude-sonnet-4-6"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "890"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "285"}},
+                {"key": "output.value", "value": {"stringValue": "Server-side WebAssembly Research Summary:\n\n1. WASI: Preview 2 finalized (June 2024) with component model and wasi-http. Threads proposal in Phase 3.\n2. Edge Computing: Cloudflare Workers (10M+ req/sec with Wasm, 34% of workers), Fastly Compute (sub-ms cold starts, 78% Wasm-based), Vercel growing.\n3. Databases: SingleStore, Redpanda, and ScyllaDB support Wasm UDFs for in-database compute.\n4. Containers: Docker+Wasm integration in beta. Spin and wasmCloud gaining traction as Wasm-native platforms.\n5. Enterprise: Shopify (serverless extensions), Amazon Prime Video (client-side Wasm for video processing)."}},
+                {"key": "langgraph.node", "value": {"stringValue": "research_summary_b"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c16",
+              "parentSpanId": "c01",
+              "name": "quality_checker",
+              "startTimeUnixNano": 6000000000,
+              "endTimeUnixNano": 7800000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "AGENT"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "input.value", "value": {"stringValue": "Verify the factual accuracy of research findings from Agent A and Agent B. Cross-check browser support stats, company case studies, and WASI specification dates."}},
+                {"key": "output.value", "value": {"stringValue": "Quality check passed with minor corrections: Browser support confirmed at 95.5%. Figma 3x claim verified. WASI Preview 2 date confirmed. One correction: Fastly cold start is <1ms, not sub-millisecond in all cases — p50 is 0.3ms but p99 can be 5ms. Overall confidence: HIGH."}},
+                {"key": "langgraph.node", "value": {"stringValue": "quality_checker"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c17",
+              "parentSpanId": "c16",
+              "name": "verify_facts",
+              "startTimeUnixNano": 6100000000,
+              "endTimeUnixNano": 6700000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "950"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "200"}},
+                {"key": "output.value", "value": {"stringValue": "Fact verification checklist:\n- Browser support 95.5% → NEEDS VERIFICATION via Can I Use API\n- Figma 3x load time → matches public blog post, LIKELY ACCURATE\n- WASI Preview 2 June 2024 → NEEDS VERIFICATION\n- Cloudflare 10M req/sec → plausible but unverified\n- Fastly sub-ms cold start → claim needs nuance (p50 vs p99)\nLet me check the most critical claims via the fact-check API."}},
+                {"key": "langgraph.node", "value": {"stringValue": "verify_facts"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c18",
+              "parentSpanId": "c16",
+              "name": "fact_check_api",
+              "startTimeUnixNano": 6800000000,
+              "endTimeUnixNano": 7300000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "tool.name", "value": {"stringValue": "fact_check_api"}},
+                {"key": "input.value", "value": {"stringValue": "{\"claims\": [{\"text\": \"WebAssembly browser support is 95.5% globally\", \"source\": \"caniuse.com\"}, {\"text\": \"WASI Preview 2 was finalized in June 2024\", \"source\": \"W3C WASI subgroup\"}, {\"text\": \"Figma achieved 3x load time improvement with WebAssembly\", \"source\": \"Figma engineering blog\"}]}"}},
+                {"key": "output.value", "value": {"stringValue": "{\"results\": [{\"claim\": \"WebAssembly browser support is 95.5% globally\", \"verdict\": \"CONFIRMED\", \"confidence\": 0.98, \"note\": \"Current data shows 95.53% as of July 2025\"}, {\"claim\": \"WASI Preview 2 was finalized in June 2024\", \"verdict\": \"CONFIRMED\", \"confidence\": 0.95, \"note\": \"Ratified by W3C WASI subgroup on 2024-06-15\"}, {\"claim\": \"Figma achieved 3x load time improvement with WebAssembly\", \"verdict\": \"CONFIRMED\", \"confidence\": 0.92, \"note\": \"Blog post from 2023 states 3x improvement in initial load\"}]}"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c19",
+              "parentSpanId": "c16",
+              "name": "quality_report",
+              "startTimeUnixNano": 7400000000,
+              "endTimeUnixNano": 7750000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "720"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "160"}},
+                {"key": "output.value", "value": {"stringValue": "Quality Report: All three key claims verified with high confidence (92-98%). Minor correction needed: Fastly cold start latency should specify p50 vs p99 percentile. No fabricated statistics detected. Research is well-sourced and suitable for the final report. Confidence level: HIGH."}},
+                {"key": "langgraph.node", "value": {"stringValue": "quality_report"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c20",
+              "parentSpanId": "c01",
+              "name": "merge_findings",
+              "startTimeUnixNano": 8000000000,
+              "endTimeUnixNano": 8600000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "1450"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "350"}},
+                {"key": "output.value", "value": {"stringValue": "Merged research findings into unified structure:\n\n1. Client-Side (Agent A): Browser support, performance gains, case studies\n2. Server-Side (Agent B): WASI progress, edge computing, database plugins\n3. Quality Notes: All key claims verified, minor Fastly clarification applied\n\nKey themes: Wasm is mature on client, rapidly growing on server. The component model (WASI P2) is the most significant recent development for server-side. Edge computing is the strongest server-side use case today.\n\nReady for writer agent to produce the report."}},
+                {"key": "langgraph.node", "value": {"stringValue": "merge_findings"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c21",
+              "parentSpanId": "c01",
+              "name": "writer_agent",
+              "startTimeUnixNano": 8800000000,
+              "endTimeUnixNano": 13500000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "AGENT"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "input.value", "value": {"stringValue": "Write a comprehensive research report on WebAssembly adoption in production systems based on the merged findings. Include sections on client-side, server-side, case studies, and future outlook. Apply self-review and revision before finalizing."}},
+                {"key": "output.value", "value": {"stringValue": "Report complete: 'WebAssembly in Production: 2025 State of Adoption'. 4 sections, ~2,500 words. Reviewed and revised for clarity, accuracy, and completeness. Formatted in markdown with citations."}},
+                {"key": "langgraph.node", "value": {"stringValue": "writer_agent"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c22",
+              "parentSpanId": "c21",
+              "name": "draft_outline",
+              "startTimeUnixNano": 8900000000,
+              "endTimeUnixNano": 9400000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o-mini"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "1200"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "280"}},
+                {"key": "output.value", "value": {"stringValue": "Report Outline:\n\n1. Executive Summary\n2. Client-Side Adoption\n   2.1 Browser Support Landscape\n   2.2 Performance Benchmarks\n   2.3 Major Case Studies (Figma, Google Earth, Adobe)\n3. Server-Side & Infrastructure\n   3.1 WASI Specification Progress\n   3.2 Edge Computing Platforms\n   3.3 Database & Plugin Ecosystems\n4. Enterprise Adoption Patterns\n5. Challenges & Limitations\n6. Future Outlook\n7. Conclusion"}},
+                {"key": "langgraph.node", "value": {"stringValue": "draft_outline"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c23",
+              "parentSpanId": "c21",
+              "name": "write_sections",
+              "startTimeUnixNano": 9500000000,
+              "endTimeUnixNano": 10800000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o-mini"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "1800"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "2200"}},
+                {"key": "output.value", "value": {"stringValue": "# WebAssembly in Production: 2025 State of Adoption\n\n## 2. Client-Side Adoption\nWebAssembly has achieved 95.5% global browser support, making it a reliable target for production web applications. Figma's migration of their rendering engine to Wasm delivered a 3x improvement in load times...\n\n## 3. Server-Side & Infrastructure\nThe finalization of WASI Preview 2 in June 2024 marked a watershed moment. The component model enables language-agnostic composition of Wasm modules...\n\n[Draft continues for ~2,500 words across all sections]"}},
+                {"key": "langgraph.node", "value": {"stringValue": "write_sections"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c24",
+              "parentSpanId": "c21",
+              "name": "self_review",
+              "startTimeUnixNano": 10900000000,
+              "endTimeUnixNano": 11500000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o-mini"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "2800"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "220"}},
+                {"key": "output.value", "value": {"stringValue": "Self-review findings:\n1. Section 2.2 lacks specific benchmark numbers — add Figma's 10x multiplier data rendering stat\n2. Section 3.2 should mention Shopify Functions as an enterprise edge case study\n3. The future outlook section is too short — expand on Wasm GC implications\n4. Missing citation links for two claims in Section 3.1\n5. Tone is slightly too academic — make more accessible\n6. Overall structure is solid, transitions between sections are smooth"}},
+                {"key": "langgraph.node", "value": {"stringValue": "self_review"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c25",
+              "parentSpanId": "c21",
+              "name": "revise",
+              "startTimeUnixNano": 11600000000,
+              "endTimeUnixNano": 12800000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o-mini"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "3200"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "2400"}},
+                {"key": "output.value", "value": {"stringValue": "Revised report incorporating all self-review feedback:\n- Added Figma 10x data rendering benchmark in Section 2.2\n- Added Shopify Functions case study in Section 3.2\n- Expanded future outlook with Wasm GC analysis (Chrome 119, Firefox 120)\n- Added missing citation URLs\n- Simplified academic language throughout\n- Final word count: ~2,800 words"}},
+                {"key": "langgraph.node", "value": {"stringValue": "revise"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c26",
+              "parentSpanId": "c21",
+              "name": "format_output",
+              "startTimeUnixNano": 12900000000,
+              "endTimeUnixNano": 13400000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "tool.name", "value": {"stringValue": "format_output"}},
+                {"key": "input.value", "value": {"stringValue": "{\"content\": \"[full revised report markdown]\", \"format\": \"markdown\", \"add_toc\": true, \"add_metadata\": true}"}},
+                {"key": "output.value", "value": {"stringValue": "{\"formatted_content\": \"[report with TOC, metadata header, and proper markdown formatting]\", \"word_count\": 2813, \"sections\": 7, \"citations\": 12}"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c27",
+              "parentSpanId": "c01",
+              "name": "executive_summary",
+              "startTimeUnixNano": 13600000000,
+              "endTimeUnixNano": 14100000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "3500"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "280"}},
+                {"key": "output.value", "value": {"stringValue": "Executive Summary: WebAssembly has evolved from a browser-only technology to a universal runtime. With 95.5% browser support and production deployments at Figma, Google Earth, and Adobe, client-side adoption is mature. Server-side growth accelerated with WASI Preview 2 (2024), enabling edge computing at Cloudflare (10M+ req/sec) and Fastly (sub-ms cold starts). Key trend: the component model is enabling a new ecosystem of composable, language-agnostic modules. Challenges remain in tooling maturity and developer experience, but the trajectory is strongly positive."}},
+                {"key": "langgraph.node", "value": {"stringValue": "executive_summary"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c28",
+              "parentSpanId": "c01",
+              "name": "send_notification",
+              "startTimeUnixNano": 14200000000,
+              "endTimeUnixNano": 14500000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "tool.name", "value": {"stringValue": "send_notification"}},
+                {"key": "input.value", "value": {"stringValue": "{\"channel\": \"#research-reports\", \"message\": \"New report ready: WebAssembly in Production — 2025 State of Adoption. 2,800 words, 12 citations, covering client-side, server-side, edge computing, and future outlook.\", \"mention\": [\"@research-team\"]}"}},
+                {"key": "output.value", "value": {"stringValue": "{\"status\": \"sent\", \"message_id\": \"msg_20250801_001\", \"timestamp\": \"2025-08-01T14:32:00Z\"}"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c29",
+              "parentSpanId": "c01",
+              "name": "final_compile",
+              "startTimeUnixNano": 14600000000,
+              "endTimeUnixNano": 15200000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "3800"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "150"}},
+                {"key": "output.value", "value": {"stringValue": "Final compilation complete. Report assembled with executive summary prepended, all sections in order, citations formatted as footnotes, and metadata header added. Ready for storage."}},
+                {"key": "langgraph.node", "value": {"stringValue": "final_compile"}}
+              ]
+            },
+            {
+              "traceId": "cplx_trace_001",
+              "spanId": "c30",
+              "parentSpanId": "c01",
+              "name": "save_report",
+              "startTimeUnixNano": 15300000000,
+              "endTimeUnixNano": 15700000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_complex"}},
+                {"key": "tool.name", "value": {"stringValue": "save_report"}},
+                {"key": "input.value", "value": {"stringValue": "{\"title\": \"WebAssembly in Production: 2025 State of Adoption\", \"format\": \"markdown\", \"path\": \"/reports/wasm-adoption-2025.md\", \"tags\": [\"webassembly\", \"research\", \"2025\", \"production-adoption\"]}"}},
+                {"key": "output.value", "value": {"stringValue": "{\"status\": \"saved\", \"path\": \"/reports/wasm-adoption-2025.md\", \"size_bytes\": 18432, \"version\": 1}"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

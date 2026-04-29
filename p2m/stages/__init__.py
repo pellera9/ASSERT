@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import design, judge, policy, rollout, seeds
+from . import design, judge, policy, rollout, seeds, systematization, systematization_convert
 
 STAGES = {
     "policy": policy,
@@ -10,6 +10,8 @@ STAGES = {
     "seeds": seeds,
     "rollout": rollout,
     "judge": judge,
+    "systematization": systematization,
+    "systematization_convert": systematization_convert,
 }
 
 STAGE_NAMES = tuple(STAGES)

@@ -182,7 +182,7 @@ class StageRunnerSmokeTest(unittest.TestCase):
                 self.assertEqual(calls["systematization"]["concept_text"], "Harmful advice")
                 self.assertEqual(calls["systematization"]["model_cfg"].name, "azure/gpt-5.4")
                 self.assertEqual(calls["convert"]["behavior_count_hint"], 5)
-                self.assertEqual(result["policy_path"], str(root / "policy.json"))
+                self.assertEqual(Path(result["policy_path"]).resolve(), (root / "policy.json").resolve())
 
         for case in [
             _seeds_case(),

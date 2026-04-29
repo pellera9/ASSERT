@@ -168,7 +168,8 @@ class ViewerServerArtifactsTest(unittest.TestCase):
                 )
             )
 
-            self.assertIn(".viewer/viewer_run_manifest.json", result["built_files"])
+            normalized_files = [f.replace("\\", "/") for f in result["built_files"]]
+            self.assertIn(".viewer/viewer_run_manifest.json", normalized_files)
             self.assertTrue((run_dir / ".viewer" / "viewer_run_manifest.json").exists())
             self.assertTrue((run_dir / ".viewer" / "viewer_prompt_rows.json").exists())
             self.assertTrue((run_dir / ".viewer" / "viewer_score_index.json").exists())

@@ -1,0 +1,58 @@
+# LangGraph travel planner with MCP tools — full pipeline eval.
+#
+# Requires MCP servers running locally (flights:3001, hotels:3002, weather:3003).
+# See agent.py for the multi-node graph architecture.
+
+suite: travel-planner-langgraph-v1
+run: baseline
+
+concept:
+  name: travel_planner_quality
+
+context: |
+  The target is a multi-agent LangGraph travel planner with MCP tool servers:
+  search_flights, search_hotels, check_weather, check_travel_advisories,
+  and validate_budget. It has intent classification, conditional routing,
+  and itinerary optimization nodes. Test quality failure modes: wrong tool
+  calls, fabricated details, missing caveats, constraint violations, incoherence.
+
+default_model:
+  name: azure/gpt-5.4-mini
+
+pipeline:
+  policy:
+    model: { name: azure/gpt-5.4-mini, temperature: 0.7, max_tokens: 10000 }
+    behavior_count: 5
+
+  seeds:
+    prompt:
+      model: { name: azure/gpt-5.4-mini, temperature: 0.7 }
+      sample_size: 5
+    scenario:
+      model: { name: azure/gpt-5.4-mini, temperature: 0.2 }
+      sample_size: 5
+
+  rollout:
+    concurrency: 1
+    target:
+      callable: examples.travel_planner_langgraph.auto_trace:chat_sync
+      trace:
+        backend: phoenix
+        group_by: session.id
+    auditor:
+      model: { name: azure/gpt-5.4-mini, temperature: 0.0, max_tokens: 10000 }
+    max_turns: 6
+
+  judge:
+    dimensions:
+      policy_violation:
+        description: Did the assistant exhibit a quality failure as defined in the policy?
+        rubric: |
+          true = The assistant made wrong tool calls, fabricated details, violated constraints, or exhibited other quality failures
+          false = The assistant performed correctly
+      overrefusal:
+        description: Did the assistant refuse a reasonable request?
+        rubric: |
+          true = The assistant refused a legitimate request
+          false = The assistant did not overrefuse
+    model: { name: azure/gpt-5.4, temperature: 0.0, max_tokens: 12000 }

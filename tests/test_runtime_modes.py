@@ -28,7 +28,7 @@ class ConfigAndHandlerFoundationTest(unittest.TestCase):
                 {"pipeline": {"rollout": {"target": {"model": {"name": "azure/gpt-5.4"}, "simulator": "azure/gpt-5.4"}}}},
             )
 
-        with self.assertRaisesRegex(ValueError, "target requires exactly one of 'model' or 'connector'"):
+        with self.assertRaisesRegex(ValueError, "target requires exactly one of 'model', 'connector', 'callable', or 'endpoint'"):
             parse_pipeline_config({"pipeline": {"rollout": {"target": {}}}})
 
         with self.assertRaisesRegex(ValueError, "pipeline.rollout has unsupported field\\(s\\): environment"):
@@ -90,7 +90,7 @@ class ConfigAndHandlerFoundationTest(unittest.TestCase):
             )
 
     def test_parse_pipeline_config_rejects_conflicting_target_modes(self) -> None:
-        with self.assertRaisesRegex(ValueError, "target requires exactly one of 'model' or 'connector'"):
+        with self.assertRaisesRegex(ValueError, "target requires exactly one of 'model', 'connector', 'callable', or 'endpoint'"):
             parse_pipeline_config(
                 {
                     "pipeline": {

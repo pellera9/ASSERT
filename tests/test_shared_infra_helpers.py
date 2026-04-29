@@ -370,7 +370,7 @@ class SharedInfraHelpersTest(unittest.IsolatedAsyncioTestCase):
         )
 
         node_schema = contract["response_schema"]["json_schema"]["properties"]["node_judgments"]
-        self.assertEqual(node_schema["maxItems"], 3)
+        self.assertNotIn("maxItems", node_schema)  # omitted for strict-mode compatibility
         self.assertEqual(
             node_schema["items"]["properties"]["node_name"]["enum"],
             ["a", "b", "c"],

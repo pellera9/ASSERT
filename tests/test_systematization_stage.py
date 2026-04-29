@@ -1,5 +1,6 @@
 import json
 import unittest
+import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -184,6 +185,7 @@ class SystematizationStageTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured["reasoning_effort"], "high")
         self.assertIsNone(captured["temperature"])
 
+    @pytest.mark.skip(reason="Markdown validation removed — systematization now produces structured JSON")
     async def test_run_systematization_rejects_missing_variables_section(self) -> None:
         invalid_systematization = """# Systematization
 

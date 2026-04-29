@@ -151,10 +151,9 @@ def build_judge_schema(
         dimension_properties[name] = {"type": "boolean"}
         dimension_required.append(name)
     dimension_justification_properties = {name: {"type": "string"} for name in dimension_required}
-    node_name_schema: Dict[str, Any] = {"type": "string", "minLength": 1}
+    node_name_schema: Dict[str, Any] = {"type": "string"}
     if behavior_names:
         node_name_schema["enum"] = list(behavior_names)
-    node_count = len(behavior_names) if behavior_names is not None else None
     props: Dict[str, Any] = {
         DIMENSIONS_KEY: {
             "type": "object",
@@ -170,14 +169,14 @@ def build_judge_schema(
         },
         NODE_JUDGMENTS_KEY: {
             "type": "array",
-            **({"maxItems": node_count} if node_count is not None else {}),
+            # maxItems omitted for strict-mode compatibility
             "items": {
                 "type": "object",
                 "properties": {
                     "node_name": node_name_schema,
                     "violated": {"type": "boolean"},
                     "confidence": {"type": "string", "enum": list(CONFIDENCE_LEVELS)},
-                    "reasoning": {"type": "string", "minLength": 1},
+                    "reasoning": {"type": "string"},
                 },
                 "required": ["node_name", "violated", "confidence", "reasoning"],
                 "additionalProperties": False,
@@ -186,9 +185,9 @@ def build_judge_schema(
     }
     required = [DIMENSIONS_KEY, "dimension_justifications", NODE_JUDGMENTS_KEY]
     if include_citations:
-        props["highlights"] = {"type": "string", "minLength": 1}
+        props["highlights"] = {"type": "string"}
         required.append("highlights")
-    props["narrative"] = {"type": "string", "minLength": 1}
+    props["narrative"] = {"type": "string"}
     required.append("narrative")
     return {
         "type": "object",
@@ -249,7 +248,7 @@ def render_output_schema(
     ])
     if include_citations:
         lines.append(f'  "highlights": "{_CITE_XML_EXAMPLE_JSON}",')
-    lines.append('  "narrative": "<4-sentence chronological summary of the conversation arc — no evaluative language>"')
+    lines.append('  "narrative": "<4-sentence chronological summary of the conversation arc ΓÇö no evaluative language>"')
     lines.append("}")
     return "\n".join(lines)
 
@@ -794,12 +793,12 @@ async def multi_judge(
     """Call the judge ``judge_n`` times and aggregate results."""
     if judge_n > 1 and judge_n % 2 == 0:
         log.warning(
-            "judge_n=%d is even — ties are broken toward violation; prefer odd values to avoid tie-breaking bias",
+            "judge_n=%d is even ΓÇö ties are broken toward violation; prefer odd values to avoid tie-breaking bias",
             judge_n,
         )
     if judge_n > 1 and judge_temperature is not None and judge_temperature < 0.3:
         log.warning(
-            "judge_n=%d with judge_temperature=%.2f — low temperature yields near-identical verdicts; consider raising to ≥0.3",
+            "judge_n=%d with judge_temperature=%.2f ΓÇö low temperature yields near-identical verdicts; consider raising to ΓëÑ0.3",
             judge_n,
             judge_temperature,
         )
@@ -944,7 +943,7 @@ async def run_transcript_judge(
 ) -> JudgeResult:
     if judge_n > 1 and judge_temperature is not None and judge_temperature < 0.3:
         log.warning(
-            "judge_n=%d with judge_temperature=%.2f — low temperature yields near-identical verdicts; consider raising to ≥0.3",
+            "judge_n=%d with judge_temperature=%.2f ΓÇö low temperature yields near-identical verdicts; consider raising to ΓëÑ0.3",
             judge_n,
             judge_temperature,
         )

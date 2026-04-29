@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import json
 from dataclasses import dataclass, field
@@ -13,9 +14,11 @@ from p2m.core.model_client import (
     GenerateOptions,
     Message,
     ModelResponse,
+    ToolCall,
     build_llm_call_trace,
     generate,
     generate_with_tools,
+    normalize_response,
     summarize_response,
 )
 from p2m.core.tool_backend import load_tool_module
@@ -414,6 +417,226 @@ class HostedSession:
             llm_calls=llm_calls,
             raw=raw,
             finish_reason=response.finish_reason,
+        )
+
+
+class CallableSession:
+    """Invokes a user-provided callable as the eval target.
+
+    Supports sync and async callables with two return types:
+    - fn(str) -> str                          (text-only, black-box)
+    - fn(str) -> ModelResponse                (prompt-agent: tool calls, usage, model info)
+    - fn(str, history=list) -> str            (text-only with conversation history)
+    - fn(str, history=list) -> ModelResponse  (prompt-agent with conversation history)
+
+    When the callable returns a ModelResponse (or a raw litellm/OpenAI-style
+    response object), CallableSession extracts tool call traces, token usage,
+    and model metadata — giving eval visibility into lightweight agent behavior
+    (tool-calling, RAG-with-retrieval-tools) without requiring a full connector.
+    """
+
+    def __init__(
+        self,
+        *,
+        callable_ref: str,
+        system_prompt: str | None = None,
+        message_timeout_s: float | None = None,
+    ) -> None:
+        self._callable_ref = callable_ref
+        self._system_prompt = system_prompt
+        self._message_timeout_s = message_timeout_s
+        self._callable = None
+        self._supports_history = False
+
+    @property
+    def runtime_mode(self) -> str:
+        return "callable"
+
+    async def open(self) -> None:
+        module_path, func_name = self._callable_ref.rsplit(":", 1)
+        mod = importlib.import_module(module_path)
+        self._callable = getattr(mod, func_name)
+        sig = inspect.signature(self._callable)
+        self._supports_history = "history" in sig.parameters
+
+    async def close(self) -> None:
+        self._callable = None
+
+    def _normalize_callable_result(self, result: Any) -> ModelResponse | str:
+        """Coerce the callable's return value into a ModelResponse or plain str.
+
+        Accepts:
+        - str  -> returned as-is (text-only path)
+        - p2m ModelResponse -> returned as-is
+        - litellm/OpenAI-style response object (has .choices or 'choices' key)
+          -> normalized into a p2m ModelResponse via normalize_response()
+        - dict with 'text'/'content' key -> wrapped as ModelResponse
+        - anything else -> coerced to str (backward compat)
+        """
+        if isinstance(result, str):
+            return result
+        if isinstance(result, ModelResponse):
+            return result
+        # litellm.ModelResponse or any OpenAI-style object with choices
+        if hasattr(result, "choices") or (isinstance(result, dict) and "choices" in result):
+            return normalize_response(result)
+        # dict with text/content (simple structured return)
+        if isinstance(result, dict):
+            text = result.get("text") or result.get("content")
+            if isinstance(text, str):
+                return ModelResponse(text=text, raw=result)
+        return str(result)
+
+    async def run_turn(self, messages: list[Message]) -> TurnResult:
+        user_text = ""
+        for msg in reversed(messages):
+            if msg.role == "user":
+                user_text = msg.text
+                break
+
+        if self._supports_history:
+            history = [
+                {"role": msg.role, "content": msg.text}
+                for msg in messages
+                if msg.role in ("user", "assistant")
+            ]
+            raw_result = await invoke_callable(
+                self._callable, user_text, history=history,
+                timeout_s=self._message_timeout_s,
+            )
+        else:
+            raw_result = await invoke_callable(
+                self._callable, user_text,
+                timeout_s=self._message_timeout_s,
+            )
+
+        result = self._normalize_callable_result(raw_result)
+
+        # ── Structured ModelResponse path (prompt-agent / tool-calling) ──
+        if isinstance(result, ModelResponse):
+            response_text = result.text or ""
+            tool_traces = [
+                ToolTrace(
+                    tool_name=tc.name,
+                    tool_args=tc.arguments,
+                    tool_result="",  # callable executed tools internally
+                )
+                for tc in (result.tool_calls or [])
+            ]
+            llm_calls = [build_llm_call_trace(result, source="callable")]
+            interaction_messages = [
+                {"role": "user", "content": user_text},
+                {"role": "assistant", "content": response_text},
+            ]
+            if result.tool_calls:
+                interaction_messages[1]["tool_calls"] = [
+                    tc.to_openai_dict() for tc in result.tool_calls
+                ]
+
+            return TurnResult(
+                text=response_text,
+                state_messages=list(messages) + [result.message],
+                interaction_messages=interaction_messages,
+                tool_traces=tool_traces,
+                llm_calls=llm_calls,
+                raw={
+                    "callable": self._callable_ref,
+                    "model": result.model,
+                    "usage": summarize_response(result).get("usage"),
+                },
+            )
+
+        # ── Plain string path (backward compatible) ──
+        response_text = result
+        interaction_messages = [
+            {"role": "user", "content": user_text},
+            {"role": "assistant", "content": response_text},
+        ]
+
+        return TurnResult(
+            text=response_text,
+            state_messages=list(messages) + [Message(role="assistant", content=response_text)],
+            interaction_messages=interaction_messages,
+            raw={"callable": self._callable_ref},
+        )
+
+
+class HTTPEndpointSession:
+    """Invokes an HTTP endpoint as the eval target.
+
+    POST {"message": text, "history": [...]} to the URL.
+    Expects {"response": "..."} back.
+    Same black-box visibility as CallableSession.
+    """
+
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        headers: dict[str, str] | None = None,
+        system_prompt: str | None = None,
+        message_timeout_s: float | None = None,
+    ) -> None:
+        self._endpoint = endpoint
+        self._headers = headers or {}
+        self._system_prompt = system_prompt
+        self._timeout_s = message_timeout_s
+        self._session = None  # aiohttp.ClientSession
+
+    @property
+    def runtime_mode(self) -> str:
+        return "http_endpoint"
+
+    async def open(self) -> None:
+        try:
+            import aiohttp
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                "aiohttp is required for HTTPEndpointSession. "
+                "Install it with: pip install aiohttp"
+            )
+        timeout = aiohttp.ClientTimeout(total=self._timeout_s or 60)
+        self._session = aiohttp.ClientSession(timeout=timeout)
+
+    async def close(self) -> None:
+        if self._session:
+            await self._session.close()
+            self._session = None
+
+    async def run_turn(self, messages: list[Message]) -> TurnResult:
+        user_text = ""
+        for msg in reversed(messages):
+            if msg.role == "user":
+                user_text = msg.text
+                break
+
+        history = [
+            {"role": msg.role, "content": msg.text}
+            for msg in messages
+            if msg.role in ("user", "assistant")
+        ]
+
+        payload = {"message": user_text, "history": history}
+
+        async with self._session.post(
+            self._endpoint,
+            json=payload,
+            headers=self._headers,
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            response_text = data.get("response", "")
+
+        interaction_messages = [
+            {"role": "user", "content": user_text},
+            {"role": "assistant", "content": response_text},
+        ]
+
+        return TurnResult(
+            text=response_text,
+            state_messages=list(messages) + [Message(role="assistant", content=response_text)],
+            interaction_messages=interaction_messages,
+            raw={"endpoint": self._endpoint},
         )
 
 

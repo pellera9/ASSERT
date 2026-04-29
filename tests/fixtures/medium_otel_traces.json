@@ -1,0 +1,250 @@
+{
+  "resourceSpans": [
+    {
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m01",
+              "name": "orchestrator",
+              "startTimeUnixNano": 1000000000,
+              "endTimeUnixNano": 7200000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "AGENT"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "input.value", "value": {"stringValue": "Plan a 5-day trip to Barcelona in September for 2 people, budget $4000. Include flights, hotels, and weather info."}},
+                {"key": "output.value", "value": {"stringValue": "Your Barcelona trip is planned! Flights: $1,340 round-trip for 2 on Iberia. Hotel: Hotel Arts Barcelona, 5 nights at $180/night ($900). Weather: Avg 25°C, mostly sunny. Total: $2,240 well within your $4,000 budget, leaving $1,760 for activities and dining."}},
+                {"key": "langgraph.node", "value": {"stringValue": "orchestrator"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m02",
+              "parentSpanId": "m01",
+              "name": "planning",
+              "startTimeUnixNano": 1100000000,
+              "endTimeUnixNano": 1450000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "150"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "95"}},
+                {"key": "output.value", "value": {"stringValue": "I'll break this trip planning into steps: 1) Search for flights to Barcelona (BCN) in September, 2) Analyze flight options, 3) Delegate hotel search to hotel sub-agent, 4) Get weather forecast, 5) Synthesize everything into a final plan with currency conversion."}},
+                {"key": "langgraph.node", "value": {"stringValue": "planning"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m03",
+              "parentSpanId": "m01",
+              "name": "search_flights",
+              "startTimeUnixNano": 1500000000,
+              "endTimeUnixNano": 1980000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "tool.name", "value": {"stringValue": "search_flights"}},
+                {"key": "input.value", "value": {"stringValue": "{\"origin\": \"JFK\", \"destination\": \"BCN\", \"departure_date\": \"2025-09-10\", \"return_date\": \"2025-09-15\", \"passengers\": 2, \"max_price_per_person\": 800}"}},
+                {"key": "output.value", "value": {"stringValue": "[{\"airline\": \"Iberia\", \"price_per_person\": 670, \"departure\": \"08:30\", \"arrival\": \"21:45\", \"stops\": 0}, {\"airline\": \"Delta\", \"price_per_person\": 720, \"departure\": \"17:00\", \"arrival\": \"07:15+1\", \"stops\": 1}, {\"airline\": \"TAP Portugal\", \"price_per_person\": 590, \"departure\": \"22:00\", \"arrival\": \"14:30+1\", \"stops\": 1}]"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m04",
+              "parentSpanId": "m01",
+              "name": "flight_analysis",
+              "startTimeUnixNano": 2000000000,
+              "endTimeUnixNano": 2420000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "310"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "120"}},
+                {"key": "output.value", "value": {"stringValue": "Best flight option: Iberia direct at $670/person ($1,340 total for 2). Non-stop JFK→BCN in ~7h. TAP is cheaper at $590/person but has a layover in Lisbon adding 5+ hours. Delta is mid-price with a stop. Recommend Iberia for best value-to-comfort ratio."}},
+                {"key": "langgraph.node", "value": {"stringValue": "flight_analysis"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m05",
+              "parentSpanId": "m01",
+              "name": "hotel_sub_agent",
+              "startTimeUnixNano": 2500000000,
+              "endTimeUnixNano": 4400000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "AGENT"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "input.value", "value": {"stringValue": "Find hotels in Barcelona for 5 nights (Sep 10-15), 2 guests, max $200/night. Prefer good reviews and central location."}},
+                {"key": "output.value", "value": {"stringValue": "Recommended: Hotel Arts Barcelona — 4.6★ rating, $180/night ($900 total), beachfront in Vila Olímpica. Runner-up: Casa Camper at $155/night, 4.5★ in El Raval."}},
+                {"key": "langgraph.node", "value": {"stringValue": "hotel_sub_agent"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m06",
+              "parentSpanId": "m05",
+              "name": "hotel_plan",
+              "startTimeUnixNano": 2600000000,
+              "endTimeUnixNano": 2900000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "130"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "65"}},
+                {"key": "output.value", "value": {"stringValue": "I'll search for hotels in Barcelona matching the criteria, then cross-reference with guest reviews to find the best option. Let me search availability first, then check review scores."}},
+                {"key": "langgraph.node", "value": {"stringValue": "hotel_plan"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m07",
+              "parentSpanId": "m05",
+              "name": "search_hotels",
+              "startTimeUnixNano": 3000000000,
+              "endTimeUnixNano": 3450000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "tool.name", "value": {"stringValue": "search_hotels"}},
+                {"key": "input.value", "value": {"stringValue": "{\"city\": \"Barcelona\", \"check_in\": \"2025-09-10\", \"check_out\": \"2025-09-15\", \"guests\": 2, \"max_price_per_night\": 200}"}},
+                {"key": "output.value", "value": {"stringValue": "[{\"name\": \"Hotel Arts Barcelona\", \"price_per_night\": 180, \"rating\": 4.6, \"district\": \"Vila Olímpica\"}, {\"name\": \"Casa Camper\", \"price_per_night\": 155, \"rating\": 4.5, \"district\": \"El Raval\"}, {\"name\": \"Hotel 1898\", \"price_per_night\": 195, \"rating\": 4.3, \"district\": \"La Rambla\"}]"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m08",
+              "parentSpanId": "m05",
+              "name": "check_reviews",
+              "startTimeUnixNano": 3500000000,
+              "endTimeUnixNano": 3850000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "tool.name", "value": {"stringValue": "check_reviews"}},
+                {"key": "input.value", "value": {"stringValue": "{\"hotel_names\": [\"Hotel Arts Barcelona\", \"Casa Camper\", \"Hotel 1898\"], \"min_reviews\": 100}"}},
+                {"key": "output.value", "value": {"stringValue": "[{\"name\": \"Hotel Arts Barcelona\", \"review_count\": 3842, \"highlights\": [\"stunning sea views\", \"excellent breakfast\", \"modern rooms\"], \"complaints\": [\"pricey restaurant\"]}, {\"name\": \"Casa Camper\", \"review_count\": 1256, \"highlights\": [\"quirky design\", \"free snack lounge\"], \"complaints\": [\"small rooms\"]}, {\"name\": \"Hotel 1898\", \"review_count\": 2105, \"highlights\": [\"great location\"], \"complaints\": [\"noisy street\", \"dated decor\"]}]"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m09",
+              "parentSpanId": "m05",
+              "name": "hotel_select",
+              "startTimeUnixNano": 4000000000,
+              "endTimeUnixNano": 4350000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "480"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "110"}},
+                {"key": "output.value", "value": {"stringValue": "Top pick: Hotel Arts Barcelona — highest rating (4.6★), most reviews (3,842), beachfront with sea views. At $180/night ($900 for 5 nights), it's within budget. Runner-up: Casa Camper at $155/night for a more boutique experience. Hotel 1898 dropped due to noise and decor complaints."}},
+                {"key": "langgraph.node", "value": {"stringValue": "hotel_select"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m10",
+              "parentSpanId": "m01",
+              "name": "weather_agent",
+              "startTimeUnixNano": 4500000000,
+              "endTimeUnixNano": 5400000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "AGENT"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "input.value", "value": {"stringValue": "Get weather forecast for Barcelona, Spain for September 10-15, 2025."}},
+                {"key": "output.value", "value": {"stringValue": "Barcelona Sep 10-15: Average high 27°C (81°F), low 20°C (68°F). Mostly sunny with 15% chance of afternoon showers on Sep 12. UV index high — sunscreen recommended. Sea temperature 25°C, great for beach."}},
+                {"key": "langgraph.node", "value": {"stringValue": "weather_agent"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m11",
+              "parentSpanId": "m10",
+              "name": "weather_plan",
+              "startTimeUnixNano": 4600000000,
+              "endTimeUnixNano": 4850000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o-mini"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "75"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "40"}},
+                {"key": "output.value", "value": {"stringValue": "I need to fetch the weather forecast for Barcelona in mid-September. Let me query the weather API for the specific date range."}},
+                {"key": "langgraph.node", "value": {"stringValue": "weather_plan"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m12",
+              "parentSpanId": "m10",
+              "name": "get_weather",
+              "startTimeUnixNano": 5000000000,
+              "endTimeUnixNano": 5350000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "tool.name", "value": {"stringValue": "get_weather"}},
+                {"key": "input.value", "value": {"stringValue": "{\"location\": \"Barcelona, Spain\", \"start_date\": \"2025-09-10\", \"end_date\": \"2025-09-15\"}"}},
+                {"key": "output.value", "value": {"stringValue": "{\"daily\": [{\"date\": \"2025-09-10\", \"high_c\": 28, \"low_c\": 21, \"condition\": \"sunny\"}, {\"date\": \"2025-09-11\", \"high_c\": 27, \"low_c\": 20, \"condition\": \"sunny\"}, {\"date\": \"2025-09-12\", \"high_c\": 25, \"low_c\": 19, \"condition\": \"partly_cloudy\", \"rain_chance\": 0.15}, {\"date\": \"2025-09-13\", \"high_c\": 26, \"low_c\": 20, \"condition\": \"sunny\"}, {\"date\": \"2025-09-14\", \"high_c\": 27, \"low_c\": 21, \"condition\": \"sunny\"}, {\"date\": \"2025-09-15\", \"high_c\": 26, \"low_c\": 20, \"condition\": \"sunny\"}], \"sea_temp_c\": 25}"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m13",
+              "parentSpanId": "m01",
+              "name": "synthesis",
+              "startTimeUnixNano": 5500000000,
+              "endTimeUnixNano": 5950000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "680"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "200"}},
+                {"key": "output.value", "value": {"stringValue": "Trip summary: Flights ($1,340) + Hotel ($900) = $2,240. Remaining budget: $1,760 for activities, dining, and transport. Weather looks excellent — mostly sunny, mid-20s°C. Let me convert the budget remainder to EUR for local spending estimates."}},
+                {"key": "langgraph.node", "value": {"stringValue": "synthesis"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m14",
+              "parentSpanId": "m01",
+              "name": "currency_convert",
+              "startTimeUnixNano": 6000000000,
+              "endTimeUnixNano": 6250000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "tool.name", "value": {"stringValue": "currency_convert"}},
+                {"key": "input.value", "value": {"stringValue": "{\"amount\": 1760, \"from\": \"USD\", \"to\": \"EUR\"}"}},
+                {"key": "output.value", "value": {"stringValue": "{\"converted_amount\": 1620.80, \"rate\": 0.921, \"timestamp\": \"2025-08-01T12:00:00Z\"}"}}
+              ]
+            },
+            {
+              "traceId": "med_trace_001",
+              "spanId": "m15",
+              "parentSpanId": "m01",
+              "name": "final_response",
+              "startTimeUnixNano": 6500000000,
+              "endTimeUnixNano": 7100000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_medium"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "850"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "280"}},
+                {"key": "output.value", "value": {"stringValue": "Your Barcelona trip is planned! Flights: $1,340 round-trip for 2 on Iberia (direct JFK→BCN). Hotel: Hotel Arts Barcelona, 5 nights at $180/night ($900 total), beachfront with stunning sea views. Weather: Avg 25-28°C, mostly sunny — perfect for sightseeing and beach days. Total booked cost: $2,240. Remaining budget: $1,760 (~€1,621) for dining, activities, and local transport. Pack light layers and sunscreen!"}},
+                {"key": "langgraph.node", "value": {"stringValue": "final_response"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

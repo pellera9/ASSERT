@@ -86,12 +86,32 @@ class ToolsConfig:
             raise ValueError("target.tools.toolset requires target.tools.simulator")
 
 
+VALID_TRACE_GROUP_BY = ("session.id",)
+
+
+@dataclass
+class TraceConfig:
+    backend: str = "phoenix"
+    group_by: str = "session.id"
+
+    def __post_init__(self) -> None:
+        if self.group_by not in VALID_TRACE_GROUP_BY:
+            raise ValueError(
+                f"trace.group_by must be 'session.id'. "
+                f"Trace-level and span-level evaluation (trace.id, span.id) are under development. "
+                f"Please raise a GitHub issue for timeline and specific feature requests."
+            )
+
+
 @dataclass
 class TargetConfig:
     model: ModelConfig | str | None = None
     system_prompt: str | None = None
     tools: ToolsConfig | None = None
     connector: str | None = None
+    callable: str | None = None
+    endpoint: str | None = None
+    trace: TraceConfig | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.model, str):
@@ -100,16 +120,33 @@ class TargetConfig:
         self.connector = _normalize_optional_string(self.connector)
         has_model = bool(self.model)
         has_connector = bool(self.connector)
-        if has_model == has_connector:
-            raise ValueError("target requires exactly one of 'model' or 'connector'")
+        has_callable = bool(self.callable)
+        has_endpoint = bool(self.endpoint)
+        count = sum([has_model, has_connector, has_callable, has_endpoint])
+        if count != 1:
+            raise ValueError(
+                "target requires exactly one of 'model', 'connector', 'callable', or 'endpoint'"
+            )
         if self.tools is not None and has_connector:
             raise ValueError("external target must not define target.tools")
+        if self.tools is not None and has_callable:
+            raise ValueError("callable target must not define target.tools")
+        if self.tools is not None and has_endpoint:
+            raise ValueError("endpoint target must not define target.tools")
         if self.tools is not None and not has_model:
             raise ValueError("target.tools requires target.model")
 
     @property
     def is_external(self) -> bool:
         return self.connector is not None
+
+    @property
+    def is_callable(self) -> bool:
+        return self.callable is not None
+
+    @property
+    def is_endpoint(self) -> bool:
+        return self.endpoint is not None
 
 
 @dataclass

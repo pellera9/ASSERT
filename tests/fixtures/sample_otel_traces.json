@@ -1,0 +1,109 @@
+{
+  "resourceSpans": [
+    {
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId": "abc123",
+              "spanId": "span_01",
+              "name": "intent_classifier",
+              "startTimeUnixNano": 1000000000,
+              "endTimeUnixNano": 2240000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_tokyo_trip"}},
+                {"key": "input.value", "value": {"stringValue": "Book me a week in Tokyo in July for under $3000"}},
+                {"key": "output.value", "value": {"stringValue": "{\"intent\": \"book_trip\", \"destination\": \"Tokyo\"}"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "85"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "42"}},
+                {"key": "langgraph.node", "value": {"stringValue": "intent_classifier"}}
+              ]
+            },
+            {
+              "traceId": "abc123",
+              "spanId": "span_02",
+              "parentSpanId": "span_01",
+              "name": "search_flights",
+              "startTimeUnixNano": 2300000000,
+              "endTimeUnixNano": 3500000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_tokyo_trip"}},
+                {"key": "tool.name", "value": {"stringValue": "search_flights"}},
+                {"key": "input.value", "value": {"stringValue": "{\"destination\": \"NRT\", \"max_price\": 1500}"}},
+                {"key": "output.value", "value": {"stringValue": "[{\"airline\": \"ANA\", \"price\": 1180}]"}}
+              ]
+            },
+            {
+              "traceId": "abc123",
+              "spanId": "span_03",
+              "parentSpanId": "span_01",
+              "name": "flight_search",
+              "startTimeUnixNano": 3600000000,
+              "endTimeUnixNano": 4580000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_tokyo_trip"}},
+                {"key": "output.value", "value": {"stringValue": "Found 1 flight to Tokyo. ANA at $1180."}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "210"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "35"}},
+                {"key": "langgraph.node", "value": {"stringValue": "flight_search"}}
+              ]
+            },
+            {
+              "traceId": "abc123",
+              "spanId": "span_04",
+              "parentSpanId": "span_01",
+              "name": "search_hotels",
+              "startTimeUnixNano": 4700000000,
+              "endTimeUnixNano": 5800000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "session.id", "value": {"stringValue": "sess_tokyo_trip"}},
+                {"key": "tool.name", "value": {"stringValue": "search_hotels"}},
+                {"key": "input.value", "value": {"stringValue": "{\"city\": \"Tokyo\", \"max_price_per_night\": 250}"}},
+                {"key": "output.value", "value": {"stringValue": "[{\"name\": \"Shinjuku Granbell\", \"price_per_night\": 145}]"}}
+              ]
+            },
+            {
+              "traceId": "abc123",
+              "spanId": "span_05",
+              "parentSpanId": "span_01",
+              "name": "itinerary_optimizer",
+              "startTimeUnixNano": 5900000000,
+              "endTimeUnixNano": 8000000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_tokyo_trip"}},
+                {"key": "output.value", "value": {"stringValue": "Here is your optimized Tokyo itinerary: ANA flight $1180 + Granbell 7 nights $1015 = $2195 total."}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "420"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "95"}},
+                {"key": "langgraph.node", "value": {"stringValue": "itinerary_optimizer"}}
+              ]
+            },
+            {
+              "traceId": "def456",
+              "spanId": "span_10",
+              "name": "intent_classifier",
+              "startTimeUnixNano": 10000000000,
+              "endTimeUnixNano": 11200000000,
+              "attributes": [
+                {"key": "openinference.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "session.id", "value": {"stringValue": "sess_paris_trip"}},
+                {"key": "output.value", "value": {"stringValue": "{\"intent\": \"ask_question\"}"}},
+                {"key": "llm.model_name", "value": {"stringValue": "gpt-4o"}},
+                {"key": "llm.token_count.prompt", "value": {"intValue": "50"}},
+                {"key": "llm.token_count.completion", "value": {"intValue": "20"}},
+                {"key": "langgraph.node", "value": {"stringValue": "intent_classifier"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
