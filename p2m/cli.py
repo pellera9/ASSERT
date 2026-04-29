@@ -506,7 +506,11 @@ def cli():
     "--force-stage",
     type=click.Choice(STAGE_NAMES, case_sensitive=False),
     multiple=True,
-    help="Force a stage to rerun even if cached. Repeat to force multiple stages.",
+    help=(
+        "Force a stage to rerun even if cached. Repeat to force multiple stages. "
+        "Forcing an upstream stage implicitly forces every configured downstream stage, "
+        "so cached transcripts and scores can't silently survive a regenerated input."
+    ),
     show_envvar=True,
 )
 @click.option("--strict", is_flag=True, help="Fail on malformed JSONL inputs instead of skipping bad rows.")

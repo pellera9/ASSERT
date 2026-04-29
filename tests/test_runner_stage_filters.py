@@ -148,10 +148,6 @@ class RunnerStageFilterTest(unittest.TestCase):
         # and have cached outputs, so they stay skipped. seeds is the
         # explicit force; rollout + judge get cascaded in.
         self.assertEqual(seen, ["seeds", "rollout", "judge"])
-        self.assertIn(
-            "Cascading --force-stage to downstream stages: judge, rollout",
-            fake_err.getvalue(),
-        )
 
     def test_force_stage_no_cascade_when_only_terminal_stage_forced(self) -> None:
         seen: list[str] = []
@@ -189,7 +185,6 @@ class RunnerStageFilterTest(unittest.TestCase):
 
         self.assertEqual(rc, 0)
         self.assertEqual(seen, ["judge"])
-        self.assertNotIn("Cascading", fake_err.getvalue())
 
 
 if __name__ == "__main__":

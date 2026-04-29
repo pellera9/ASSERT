@@ -343,14 +343,6 @@ def run_pipeline(
                 for name in PIPELINE_STAGE_ORDER[min_forced_index:]
                 if name in configured_stage_names
             }
-            implied = sorted(cascade.difference(requested_force_stages))
-            if implied:
-                joined = ", ".join(implied)
-                print(
-                    f"  Cascading --force-stage to downstream stages: {joined}",
-                    file=sys.stderr,
-                    flush=True,
-                )
             requested_force_stages = requested_force_stages.union(cascade)
 
     stages_to_run: list[tuple[str, Any, dict[str, Any]]] = []
