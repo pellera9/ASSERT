@@ -20,7 +20,7 @@ run: custom-otel
 # Points to the SAME travel_planner_eval.md — proves the spec is
 # portable across frameworks. Write once, eval any implementation.
 concept:
-  name: travel_planner_quality
+  name: travel_planner_eval
 
 # ── CONTEXT (describes THIS agent's architecture) ────────────────────
 # NeurOSan uses 5 specialized sub-agents instead of LangGraph nodes.
