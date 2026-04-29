@@ -1009,9 +1009,9 @@ async def run_rollout(
         )
         sys.__stderr__.flush()
 
-    build_run_viewer_artifacts(out_dir)
     if errors:
         raise errors[0]
+    build_run_viewer_artifacts(out_dir)
 
     return {
         "transcripts_path": str(transcripts_path),
