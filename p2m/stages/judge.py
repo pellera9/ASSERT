@@ -66,6 +66,7 @@ async def run_judge(
     save_dir: str | None = None,
     evaluation: Any,
     judge_dimensions: list[dict[str, Any]] | None = None,
+    forced: bool = False,
 ) -> dict[str, Any]:
     """Score transcript rows and write score artifacts."""
     judge_model = str(evaluation.judge.model.name)
@@ -187,10 +188,13 @@ async def run_judge(
     if scores_path.exists():
         stored_hash = config_hash_path.read_text(encoding="utf-8").strip() if config_hash_path.exists() else None
         if stored_hash is not None and stored_hash != config_hash:
-            logging.warning(
-                "Judge config or transcripts changed since last run — discarding %s and starting fresh",
-                scores_path,
-            )
+            if not forced:
+                # Suppress this warning when the stage was explicitly forced;
+                # the user already opted into discarding via --force-stage.
+                logging.warning(
+                    "Judge config or transcripts changed since last run - discarding %s and starting fresh",
+                    scores_path,
+                )
             scores_path.unlink()
         else:
             for prior in load_jsonl(scores_path):
@@ -267,6 +271,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, str]:
         save_dir=cfg.get("save_dir"),
         evaluation=ctx["evaluation"],
         judge_dimensions=judge_dimensions,
+        forced=bool(ctx.get("_stage_forced", False)),
     )
     return {
         "scores_path": result["scores_path"],

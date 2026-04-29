@@ -844,6 +844,7 @@ async def run_rollout(
     evaluation: EvaluationConfig | None = None,
     config_path: Path | None = None,
     strict: bool = False,
+    forced: bool = False,
 ) -> dict[str, Any]:
     """Run all seed rollouts and write the transcript artifact."""
     if not target.model and not target.connector and not target.callable and not target.endpoint:
@@ -897,10 +898,11 @@ async def run_rollout(
         # Check that existing transcripts were produced with the same config.
         stored_hash = config_hash_path.read_text(encoding="utf-8").strip() if config_hash_path.exists() else None
         if stored_hash is not None and stored_hash != config_hash:
-            logging.warning(
-                "Rollout config changed since last run ΓÇö discarding %s and starting fresh",
-                transcripts_path,
-            )
+            if not forced:
+                logging.warning(
+                    "Rollout config changed since last run - discarding %s and starting fresh",
+                    transcripts_path,
+                )
             transcripts_path.unlink()
         else:
             for row in load_jsonl(transcripts_path):
@@ -1012,6 +1014,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
         evaluation=ctx.get("evaluation"),
         config_path=ctx["config_path"],
         strict=cfg.get("strict", False),
+        forced=bool(ctx.get("_stage_forced", False)),
     )
     target_obj = ctx["target"]
     target_model = ""

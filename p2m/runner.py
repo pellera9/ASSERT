@@ -390,6 +390,12 @@ def run_pipeline(
         _print_stage_start(stage_name, ctx, raw_cfg)
         stage_start = time.monotonic()
         stage_result: dict[str, Any] = {}
+        # Pass the per-stage "was this forced" flag through ctx so stages
+        # like rollout/judge can distinguish a real cache-mismatch warning
+        # from a redundant one (the user already opted into discarding via
+        # --force-stage, possibly via cascade). Stages that don't read
+        # _stage_forced ignore it.
+        ctx["_stage_forced"] = stage_name in requested_force_stages
         try:
             stage_result = asyncio.run(module.run(ctx, raw_cfg)) or {}
             ok = True
