@@ -28,7 +28,7 @@ run: baseline
 # The policy stage (below) reads this .md and uses MSR's systematization
 # science to automatically generate a structured behavior taxonomy.
 concept:
-  name: travel_planner_eval
+  name: travel_planner_quality
 
 # ── CONTEXT (describes YOUR agent) ───────────────────────────────────
 # Free-text description of the agent under test. The seed generator uses
