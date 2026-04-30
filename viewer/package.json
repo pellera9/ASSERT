@@ -26,7 +26,6 @@
 	"dependencies": {
 		"@primer/css": "^22.1.1",
 		"@primer/primitives": "^11.7.1",
-		"@primer/react": "^38.21.1",
 		"marked": "^17.0.1",
 		"yaml": "^2.8.3"
 	},

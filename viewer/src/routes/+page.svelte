@@ -56,13 +56,9 @@
 	</div>
 	<a
 		href="/new"
-		class="prc-Button-ButtonBase-9n-Xk no-underline"
-		data-size="small"
-		data-variant="primary"
+		class="btn btn-primary btn-small no-underline"
 	>
-		<span class="prc-Button-ButtonContent-Iohp5">
-			<span class="prc-Button-Label-FWkx3">+ New evaluation run</span>
-		</span>
+		+ New evaluation run
 	</a>
 </div>
 
@@ -136,44 +132,32 @@
 		<span class="flex-shrink-0 text-[11px] text-text-muted">{filtered.length} suites</span>
 	</div>
 	<div class="flex flex-shrink-0 items-center">
-		<div class="prc-ButtonGroup-ButtonGroup-vFUrY">
-			<div>
-				<button
-					type="button"
-					class="prc-Button-ButtonBase-9n-Xk prc-Button-IconButton-fyge7"
-					data-size="small"
-					data-variant={viewMode === 'card' ? 'primary' : 'default'}
-					aria-label="Card view"
-					aria-pressed={viewMode === 'card'}
-					onclick={() => viewMode = 'card'}
-				>
-					<span class="prc-Button-Visual-YNt2F">
-						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-							<rect x="3" y="3" width="7" height="7" rx="1" />
-							<rect x="14" y="3" width="7" height="7" rx="1" />
-							<rect x="3" y="14" width="7" height="7" rx="1" />
-							<rect x="14" y="14" width="7" height="7" rx="1" />
-						</svg>
-					</span>
-				</button>
-			</div>
-			<div>
-				<button
-					type="button"
-					class="prc-Button-ButtonBase-9n-Xk prc-Button-IconButton-fyge7"
-					data-size="small"
-					data-variant={viewMode === 'list' ? 'primary' : 'default'}
-					aria-label="List view"
-					aria-pressed={viewMode === 'list'}
-					onclick={() => { viewMode = 'list'; listPage = 1; }}
-				>
-					<span class="prc-Button-Visual-YNt2F">
-						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-							<path d="M4 6h16M4 12h16M4 18h16" />
-						</svg>
-					</span>
-				</button>
-			</div>
+		<div class="btn-group-attached">
+			<button
+				type="button"
+				class="btn btn-icon-small {viewMode === 'card' ? 'btn-primary' : ''}"
+				aria-label="Card view"
+				aria-pressed={viewMode === 'card'}
+				onclick={() => viewMode = 'card'}
+			>
+				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+					<rect x="3" y="3" width="7" height="7" rx="1" />
+					<rect x="14" y="3" width="7" height="7" rx="1" />
+					<rect x="3" y="14" width="7" height="7" rx="1" />
+					<rect x="14" y="14" width="7" height="7" rx="1" />
+				</svg>
+			</button>
+			<button
+				type="button"
+				class="btn btn-icon-small {viewMode === 'list' ? 'btn-primary' : ''}"
+				aria-label="List view"
+				aria-pressed={viewMode === 'list'}
+				onclick={() => { viewMode = 'list'; listPage = 1; }}
+			>
+				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+					<path d="M4 6h16M4 12h16M4 18h16" />
+				</svg>
+			</button>
 		</div>
 	</div>
 </div>
