@@ -52,6 +52,20 @@
 		return map;
 	});
 
+	let evalCountsByBehavior = $derived.by(() => {
+		const map = new Map<string, number>();
+		const accumulate = (source: Record<string, Record<string, JudgedSample[]>> | undefined) => {
+			for (const runMap of Object.values(source ?? {})) {
+				for (const [behavior, samples] of Object.entries(runMap)) {
+					map.set(behavior, (map.get(behavior) ?? 0) + samples.length);
+				}
+			}
+		};
+		accumulate(data.promptsByRunBehavior);
+		accumulate(data.scenariosByRunBehavior);
+		return map;
+	});
+
 	let selectedBehaviorData = $derived.by(() => {
 		if (!selectedBehavior) return null;
 		const idx = sortedBehaviors.findIndex((behavior) => behavior.name === selectedBehavior);
@@ -396,7 +410,7 @@
 						</div>
 						<span class="text-right font-mono text-xs text-text-muted">{pCount}</span>
 						<span class="text-right font-mono text-xs text-text-muted">{sCount}</span>
-						<span class="text-right font-mono text-xs text-text-muted">{allRuns.length}</span>
+						<span class="text-right font-mono text-xs text-text-muted">{evalCountsByBehavior.get(behavior.name) ?? 0}</span>
 					</div>
 				{/each}
 			</div>
