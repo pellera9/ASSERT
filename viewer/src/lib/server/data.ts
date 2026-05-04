@@ -1016,6 +1016,20 @@ export function loadSuitePageData(suiteId: string) {
 	const scenarioSeeds = buildScenarioSeeds(snapshot);
 	const { runs, auditRuns } = buildRunListEntries(snapshot);
 
+	const samplesByRunBehavior: Record<string, Record<string, JudgedSample[]>> = {};
+	for (const run of runs) {
+		if (!run.has_judged) continue;
+		const samples = buildJudgedSamplesFromSnapshot(
+			loadRunSnapshot(suiteId, run.run_id, snapshot.seedRows, { includeTranscripts: false })
+		);
+		const grouped: Record<string, JudgedSample[]> = {};
+		for (const sample of samples) {
+			const key = sample.behavior ?? '';
+			(grouped[key] ??= []).push(sample);
+		}
+		samplesByRunBehavior[run.run_id] = grouped;
+	}
+
 	return {
 		suite_id: suiteId,
 		suite: snapshot.suite,
@@ -1024,6 +1038,7 @@ export function loadSuitePageData(suiteId: string) {
 		scenarioSeeds,
 		runs,
 		auditRuns,
+		samplesByRunBehavior,
 		dimensionDefs: loadDimensions(),
 		systematization: snapshot.systematization
 	};

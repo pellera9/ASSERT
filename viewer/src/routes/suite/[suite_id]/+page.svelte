@@ -14,7 +14,6 @@
 	let selectedCompareRuns = $state<Set<string>>(new Set());
 	let expandedRunIds = $state<Set<string>>(new Set());
 	let behaviorEvalSamples = $state<JudgedSample[]>([]);
-	let behaviorEvalLoading = $state(false);
 	let behaviorEvalError = $state<string | null>(null);
 	let behaviorEvalRunId = $state<string | null>(null);
 	let drawerItem = $state<ViewerResultItem | null>(null);
@@ -124,27 +123,18 @@
 		return run.prompt?.metrics?.target ?? run.audit?.metrics?.target ?? '—';
 	}
 
-	async function loadBehaviorEvalResults(behavior: string) {
-		behaviorEvalLoading = true;
+	function loadBehaviorEvalResults(behavior: string) {
 		behaviorEvalError = null;
 		behaviorEvalSamples = [];
 		const promptRun = allRuns.find((run) => run.prompt !== null);
 		if (!promptRun) {
 			behaviorEvalError = 'No prompt evaluation runs available.';
-			behaviorEvalLoading = false;
 			return;
 		}
 		const runId = promptRun.prompt_run_id ?? promptRun.run_id;
 		behaviorEvalRunId = runId;
-		try {
-			const res = await fetch(`/api/runs/${encodeURIComponent(data.suite_id)}/${encodeURIComponent(runId)}/samples?behavior=${encodeURIComponent(behavior)}`);
-			if (!res.ok) throw new Error('Failed to load results');
-			behaviorEvalSamples = await res.json();
-		} catch (error) {
-			behaviorEvalError = error instanceof Error ? error.message : 'Failed to load results';
-		} finally {
-			behaviorEvalLoading = false;
-		}
+		const grouped = data.samplesByRunBehavior?.[runId];
+		behaviorEvalSamples = grouped?.[behavior] ?? [];
 	}
 
 	function selectBehavior(name: string) {
@@ -155,12 +145,12 @@
 		}
 		selectedBehavior = name;
 		panelTab = 'definition';
-		void loadBehaviorEvalResults(name);
+		loadBehaviorEvalResults(name);
 	}
 
 	function selectPanelTab(tab: 'definition' | 'seeds' | 'evaluations') {
 		panelTab = tab;
-		if (tab === 'evaluations' && selectedBehavior) void loadBehaviorEvalResults(selectedBehavior);
+		if (tab === 'evaluations' && selectedBehavior) loadBehaviorEvalResults(selectedBehavior);
 	}
 
 	function closeSidePanel() {
@@ -428,7 +418,7 @@
 							class="border-b-2 px-3 py-2 text-xs font-medium transition-colors {panelTab === tab ? 'border-interactive text-text' : 'border-transparent text-text-muted hover:border-border hover:text-text-secondary'}"
 							onclick={() => selectPanelTab(tab)}
 						>
-							{tab === 'definition' ? 'Definition' : tab === 'seeds' ? `Prompts ${selectedBehaviorData.promptCount} · Scenarios ${selectedBehaviorData.scenarioCount}` : `Evaluations${!behaviorEvalLoading && behaviorEvalSamples.length > 0 ? ` ${behaviorEvalSamples.length}` : ''}`}
+							{tab === 'definition' ? 'Definition' : tab === 'seeds' ? `Prompts ${selectedBehaviorData.promptCount} · Scenarios ${selectedBehaviorData.scenarioCount}` : `Evaluations${behaviorEvalSamples.length > 0 ? ` ${behaviorEvalSamples.length}` : ''}`}
 						</button>
 					{/each}
 				</div>
@@ -497,12 +487,7 @@
 							<h4 class="text-xs font-medium text-text">Evaluation results</h4>
 							<span class="ml-auto text-xs text-text-muted">{behaviorEvalSamples.length} result{behaviorEvalSamples.length !== 1 ? 's' : ''}</span>
 						</div>
-						{#if behaviorEvalLoading}
-							<div class="py-8 text-center">
-								<div class="inline-block h-5 w-5 animate-spin rounded-full border-2 border-text-muted border-t-interactive"></div>
-								<p class="mt-2 text-xs text-text-muted">Loading results...</p>
-							</div>
-						{:else if behaviorEvalError}
+						{#if behaviorEvalError}
 							<div class="py-6 text-center"><p class="text-sm text-score-fail">{behaviorEvalError}</p></div>
 						{:else if behaviorEvalSamples.length === 0}
 							<div class="py-8 text-center"><p class="text-sm text-text-secondary">No evaluation results for this category.</p></div>
