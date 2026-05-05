@@ -56,6 +56,12 @@ pipeline:
     model: { name: azure/gpt-5.4-mini, temperature: 0.7, max_tokens: 10000 }
     behavior_count: 6
 
+  # ── STAGE 1.5: DESIGN (Coverage Grid) ─────────────────────────────────
+  # Required when `factors` are defined: crosses behaviors with factors
+  # to produce a coverage grid the seed generator draws from.
+  design:
+    model: { name: azure/gpt-5.4-mini, temperature: 0.7 }
+
   # ── STAGE 2: SEEDS ─────────────────────────────────────────────────
   # Test cases are generated from the context (which describes NeurOSan's
   # 5-agent architecture), so prompts target THIS agent's routing logic.

@@ -93,6 +93,16 @@ pipeline:
     behavior_count: 6               # Number of failure modes to generate.
                                     # More = better coverage, higher cost.
 
+  # ── STAGE 1.5: DESIGN (Coverage Grid) ─────────────────────────────────
+  # Input:  policy.json + factors (above)
+  # Output: design.json (factorial coverage grid)
+  #
+  # Required when `factors` are defined: the seed generator draws from
+  # this grid to ensure systematic variation (each behavior x each
+  # factor level) instead of unstructured sampling.
+  design:
+    model: { name: azure/gpt-5.4-mini, temperature: 0.7 }
+
   # ── STAGE 2: SEEDS (Test Case Synthesis) ───────────────────────────
   # Input:  policy.json + context
   # Output: seeds.jsonl (adversarial test cases)
