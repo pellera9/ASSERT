@@ -36,8 +36,17 @@ uv run p2m results compare <suite> <run-a> <run-b>
 
 ## Analyze generated test cases
 
+> Requires either `OPENAI_API_KEY` (default OpenAI embedding backend) or
+> the `[analysis]` extra installed for the offline HuggingFace backend
+> (`uv sync --extra analysis` then pass `--embed-backend hf` with an HF
+> model name, e.g. `all-MiniLM-L6-v2`).
+
 ```powershell
+# OpenAI backend (default)
 uv run p2m analysis seed-metrics --policy artifacts\results\<suite>\policy.json --seeds artifacts\results\<suite>\seeds.jsonl
+
+# Offline HuggingFace backend (no API key)
+uv run p2m analysis seed-metrics --policy artifacts\results\<suite>\policy.json --seeds artifacts\results\<suite>\seeds.jsonl --embed-backend hf --embed-model all-MiniLM-L6-v2
 ```
 
 ## Where outputs go
