@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import threading
 import uuid
 from typing import Any
 
@@ -27,6 +28,7 @@ from p2m.core.collector import SpanCollector
 from p2m.core.model_client import Message
 from p2m.core.otel import (
     InMemoryTraceExporter,
+    OTelSpan,
     TraceExporter,
     _spans_to_events,
     compress_trace_for_judge,
@@ -144,13 +146,10 @@ class OTelTracedSession:
         """
         # Acquire the live exporter lock for the entire clear-invoke-export
         # cycle so concurrent OTelTracedSessions don't mix spans.
-        # Use an asyncio.Lock to avoid blocking the event loop (threading.Lock
-        # would deadlock when concurrency > 1 since invoke_callable uses
-        # asyncio.to_thread for sync callables).
         from p2m.core.otel import LiveOTelExporter
-        alock = LiveOTelExporter._async_lock if self._live_otel else None
-        if alock:
-            await alock.acquire()
+        lock = LiveOTelExporter._lock if self._live_otel else None
+        if lock:
+            lock.acquire()
         try:
             # Clear spans from previous turn so we only capture this turn's execution
             if self._live_exporter is not None:
@@ -190,8 +189,8 @@ class OTelTracedSession:
             # Collect traces for this turn
             turn_spans = self._exporter.export_session(turn_id)
         finally:
-            if alock:
-                alock.release()
+            if lock:
+                lock.release()
 
         validation = validate_spans(turn_spans)
 

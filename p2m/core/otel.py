@@ -15,7 +15,6 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import threading
 from dataclasses import dataclass, field
@@ -453,7 +452,6 @@ class LiveOTelExporter:
     _setup_done: bool = False
     _sdk_exporter: Any = None
     _lock: threading.Lock = threading.Lock()
-    _async_lock: asyncio.Lock = asyncio.Lock()
 
     def __new__(cls) -> "LiveOTelExporter":
         if cls._instance is None:
