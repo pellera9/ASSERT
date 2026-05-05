@@ -24,6 +24,8 @@
 		"vite": "^7.3.1"
 	},
 	"dependencies": {
+		"@primer/css": "^22.1.1",
+		"@primer/primitives": "^11.7.1",
 		"marked": "^17.0.1",
 		"yaml": "^2.8.3"
 	},

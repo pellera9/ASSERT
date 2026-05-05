@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from tests.node_runner import node_supports_ts, node_ts_args
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DOWNLOAD_ROUTE_SRC = (
@@ -16,6 +18,7 @@ ARTIFACTS_SRC = ROOT / "viewer" / "src" / "lib" / "server" / "artifacts.ts"
 CONFIG_SRC = ROOT / "viewer" / "src" / "lib" / "server" / "config.ts"
 
 
+@unittest.skipUnless(node_supports_ts(), "node binary lacks TypeScript support (need ≥ 22.6)")
 class ViewerDownloadApiTest(unittest.TestCase):
     def _copy_harness(self, harness_dir: Path) -> Path:
         route_path = harness_dir / "server.ts"
@@ -45,7 +48,7 @@ class ViewerDownloadApiTest(unittest.TestCase):
         self, *, harness_dir: Path, script: str, env: dict[str, str]
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["node", "--experimental-strip-types", "--input-type=module"],
+            ["node", *node_ts_args(), "--input-type=module"],
             input=script,
             text=True,
             capture_output=True,

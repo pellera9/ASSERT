@@ -6,15 +6,18 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from tests.node_runner import node_supports_ts, node_ts_args
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE_SERVER_SRC = ROOT / "viewer" / "src" / "routes" / "suite" / "[suite_id]" / "[run_id]" / "+page.server.ts"
 
 
+@unittest.skipUnless(node_supports_ts(), "node binary lacks TypeScript support (need ≥ 22.6)")
 class ViewerRunPageServerTest(unittest.TestCase):
     def _run_node(self, *, harness_dir: Path, script: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["node", "--experimental-strip-types", "--input-type=module"],
+            ["node", *node_ts_args(), "--input-type=module"],
             input=script,
             text=True,
             capture_output=True,

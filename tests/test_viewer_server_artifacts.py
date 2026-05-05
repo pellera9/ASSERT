@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from p2m.viewer_read_model import ViewerReadModelBuildError, build_run_viewer_artifacts
+from tests.node_runner import node_supports_ts, node_ts_args
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +22,7 @@ RESULT_VIEW_SRC = ROOT / "viewer" / "src" / "lib" / "result-view.ts"
 TYPES_SRC = ROOT / "viewer" / "src" / "lib" / "types.ts"
 
 
+@unittest.skipUnless(node_supports_ts(), "node binary lacks TypeScript support (need ≥ 22.6)")
 class ViewerServerArtifactsTest(unittest.TestCase):
     def _copy_data_harness(self, harness_dir: Path) -> Path:
         data_path = harness_dir / "data.ts"
@@ -78,7 +80,7 @@ class ViewerServerArtifactsTest(unittest.TestCase):
         self, *, harness_dir: Path, script: str, env: dict[str, str]
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["node", "--experimental-strip-types", "--input-type=module"],
+            ["node", *node_ts_args(), "--input-type=module"],
             input=script,
             text=True,
             capture_output=True,
@@ -303,7 +305,7 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             with self.assertRaisesRegex(ViewerReadModelBuildError, "Duplicate prompt:seed-1 row"):
                 build_run_viewer_artifacts(run_dir)
 
-    def test_load_judged_samples_surfaces_invalid_scores_jsonl(self) -> None:
+    def test_load_judged_prompts_surfaces_invalid_scores_jsonl(self) -> None:
         with TemporaryDirectory(dir=ROOT / "viewer") as tmp_dir:
             tmp_root = Path(tmp_dir)
             harness_dir = tmp_root / "harness"
@@ -340,8 +342,8 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             script = textwrap.dedent(
                 f"""\
                 try {{
-                  const {{ loadJudgedSamples }} = await import({json.dumps(data_path.as_uri())});
-                  loadJudgedSamples('suite-a', 'run-a');
+                  const {{ loadJudgedPrompts }} = await import({json.dumps(data_path.as_uri())});
+                  loadJudgedPrompts('suite-a', 'run-a');
                   console.log(JSON.stringify({{ ok: true }}));
                 }} catch (error) {{
                   console.log(JSON.stringify({{
