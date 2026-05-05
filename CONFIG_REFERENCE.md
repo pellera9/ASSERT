@@ -1,6 +1,6 @@
-# p2m config reference
+# Adaptive Eval config reference
 
-This page documents the public `eval.yaml` schema for the standard `policy -> design -> seeds -> rollout -> judge` pipeline.
+This page documents the customer-preview `eval.yaml` schema for the standard `policy -> design -> seeds -> rollout -> judge` pipeline.
 
 ## File layout
 
@@ -73,7 +73,7 @@ The fallback applies to:
 - `pipeline.policy.model`
 - `pipeline.design.model`
 - `pipeline.seeds.model`
-- `pipeline.rollout.target.model` when `target.connector` is omitted
+- `pipeline.rollout.target.model` when the target is a hosted model
 - `pipeline.rollout.auditor.model`
 - `pipeline.judge.model`
 
@@ -150,7 +150,7 @@ Accepted keys:
 
 At least one of `prompt` or `scenario` is required. The fallback order for prompt generation is `seeds.prompt.model`, then `seeds.model`, then `default_model`. Scenario generation uses the same order with `seeds.scenario.model` first.
 
-`tool_source: per_seed` requires `pipeline.rollout.target.model` and `pipeline.rollout.target.tools.simulator`. It rejects `target.connector`, `target.tools.module`, and `target.tools.toolset`.
+`tool_source: per_seed` requires `pipeline.rollout.target.model` and `pipeline.rollout.target.tools.simulator`. It rejects callable targets, endpoint targets, Python tool modules, and fixed toolsets.
 
 Example:
 
@@ -177,9 +177,13 @@ pipeline:
 Accepted keys:
 
 - `target` — mapping. Required when `rollout` is enabled.
-  - `model` — model config. Mutually exclusive with `connector`.
+  - `model` — model config. Use for hosted model or simple model+tools targets.
+  - `callable` — Python callable reference in `package.module:function` form. Use for local apps and framework agents.
+  - `endpoint` — HTTP endpoint URL. Use only when a Python callable is not available.
   - `system_prompt` — string. Optional.
-  - `connector` — string. Mutually exclusive with `model`.
+  - `trace` — mapping. Optional. Use with callable targets that emit OpenTelemetry spans.
+    - `backend` — string. Default: `phoenix`.
+    - `group_by` — string. Customer preview supports `session.id`.
   - `tools` — mapping. Optional. Allowed only when `target.model` is set.
     - `module` — string. Use a Python tool backend module.
     - `toolset` — string. Use a toolset file.
@@ -190,9 +194,29 @@ Accepted keys:
 - `concurrency` — positive integer. Default: `10`.
 - `max_tool_calls` — positive integer. Default: `10`.
 
-`target` must define exactly one of `model` or `connector`. `target.tools` may define `module`, `toolset + simulator`, or `simulator` alone. `toolset` requires `simulator`. `target.tools` is invalid with `connector`. If you omit `target.system_prompt`, rollout uses each seed's `system_prompt` when present. Scenario seeds require `auditor`. Prompt seeds do not.
+For customer-preview configs, `target` must define exactly one of `model`, `callable`, or `endpoint`.
 
-Example:
+`target.tools` is valid only with `target.model`. It may define `module`, `toolset + simulator`, or `simulator` alone. `toolset` requires `simulator`. If you omit `target.system_prompt`, rollout uses each seed's `system_prompt` when present. Scenario seeds require `auditor`. Prompt seeds do not.
+
+OTel/callable agent example:
+
+```yaml
+pipeline:
+  rollout:
+    target:
+      callable: examples.travel_planner_langgraph.auto_trace:chat_sync
+      trace:
+        backend: phoenix
+        group_by: session.id
+    auditor:
+      model:
+        name: azure/gpt-5.4-mini
+        max_tokens: 10000
+    max_turns: 6
+    concurrency: 1
+```
+
+Hosted model with simulated tools example:
 
 ```yaml
 pipeline:
@@ -220,18 +244,18 @@ pipeline:
 
 ### `judge`
 
-`judge` scores each transcript with the built-in judge dimensions plus any custom dimensions.
+`judge` scores each transcript with the configured judge dimensions and rubrics.
 
 Accepted keys:
 
-- `dimensions` — mapping from dimension name to dimension config. Default: omitted, which keeps only built-in dimensions.
+- `dimensions` — mapping from dimension name to dimension config.
   - `description` — required string.
   - `rubric` — required string.
   - `required_base` — optional boolean accepted by the parser and passed through unchanged. Current judge construction code does not read it.
 - `model` — model config. Required unless `default_model` is set.
 - `n` — positive integer. Default: `1`.
 
-If you omit `dimensions`, the judge still scores `policy_violation` and `overrefusal`. If you omit `model` and `default_model`, config validation fails.
+For customer-preview runs, define the dimensions you want the judge to score. If you omit `model` and `default_model`, config validation fails.
 
 Example:
 
@@ -363,7 +387,7 @@ default_model:
 
 ## What goes where
 
-The concept markdown file describes the risk or behavioral specification being evaluated. Reuse it across deployments when the concept stays the same.
+The concept markdown file describes the behavioral specification being evaluated. Reuse it across deployments when the concept stays the same.
 
 `context` describes the specific deployment: what the model does, who uses it, and how it is deployed. Set it per evaluation.
 
