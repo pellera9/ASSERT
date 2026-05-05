@@ -36,11 +36,13 @@ def _humanize_concept_name(concept_name: str | None) -> str:
 def _build_prompt(*, concept: str, concept_text: str, context: str | None = None) -> str:
     parts = [
         f"{SYSTEMATIZATION_PROMPT}\n\n",
-        f"# Concept Label\n{concept}\n\n",
-        f"# Source Risk Text\n{concept_text.strip()}\n",
+        "# Input\n",
+        "The following is the actual concept to systematize. Treat the label and body below as the real input, not as examples.\n\n",
+        f"## Concept Label\n{concept}\n\n",
+        f"## Background Concept of Interest\n{concept_text.strip()}\n",
     ]
     if context:
-        parts.append(f"\n# Application Context\n{context.strip()}\n")
+        parts.append(f"\n## Application Context\n{context.strip()}\n")
     return "".join(parts)
 
 
