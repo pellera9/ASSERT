@@ -60,13 +60,14 @@ Output: `seeds.jsonl`.
 
 The `rollout` stage executes each generated test case against your target.
 
-For real framework agents, prefer a callable entrypoint plus OTel trace capture:
+For any agent or multi-agent system, use a callable entrypoint. OpenTelemetry trace capture is an optional upgrade for richer judge evidence:
 
 ```yaml
 pipeline:
   rollout:
     target:
       callable: examples.travel_planner_langgraph.auto_trace:chat_sync
+      # Optional — add to capture tool calls, routing, and intermediate decisions:
       trace:
         backend: phoenix
         group_by: session.id

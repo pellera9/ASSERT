@@ -1,6 +1,8 @@
-# Quickstart: LangGraph Agent with OTel Traces
+# Quickstart: LangGraph travel planner
 
-This walkthrough runs the flagship customer-preview example: a LangGraph travel planner evaluated through a Python callable while Phoenix/OpenInference captures OpenTelemetry spans.
+This walkthrough runs the flagship customer-preview example: a LangGraph travel planner evaluated through a Python callable. Optional Phoenix/OpenInference auto-instrumentation captures OpenTelemetry spans so the judge can also see tool calls, routing, and intermediate decisions.
+
+> **Works for any agent.** `target.callable` accepts any agent or multi-agent system you can call from Python — frameworks (LangGraph, CrewAI, OpenAI Agents SDK, DSPy, LlamaIndex, AutoGen / MAF, …), custom orchestration, or thin wrappers around hosted models. You do not need OpenTelemetry to start; add Phoenix later when you want richer trace-grounded scoring.
 
 ## What you will run
 

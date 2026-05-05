@@ -178,7 +178,7 @@ Accepted keys:
 
 - `target` — mapping. Required when `rollout` is enabled.
   - `model` — model config. Use for hosted model or simple model+tools targets.
-  - `callable` — Python callable reference in `package.module:function` form. Use for local apps and framework agents.
+  - `callable` — Python callable reference in `package.module:function` form. Use for any agent or multi-agent system with a Python entrypoint, including local apps, framework agents, and custom orchestration.
   - `endpoint` — HTTP endpoint URL. Use only when a Python callable is not available.
   - `system_prompt` — string. Optional.
   - `trace` — mapping. Optional. Use with callable targets that emit OpenTelemetry spans.
@@ -198,7 +198,7 @@ For customer-preview configs, `target` must define exactly one of `model`, `call
 
 `target.tools` is valid only with `target.model`. It may define `module`, `toolset + simulator`, or `simulator` alone. `toolset` requires `simulator`. If you omit `target.system_prompt`, rollout uses each seed's `system_prompt` when present. Scenario seeds require `auditor`. Prompt seeds do not.
 
-OTel/callable agent example:
+Callable agent example with optional OTel trace capture:
 
 ```yaml
 pipeline:

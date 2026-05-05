@@ -26,8 +26,8 @@ Start with these files:
 - `README.md` - customer-facing overview and quickstart.
 - `docs/quickstart.md` - LangGraph travel planner walkthrough.
 - `docs/targets/overview.md` - target decision tree.
-- `docs/targets/otel-agent.md` - trace-capture path for framework agents.
-- `docs/targets/callable.md` - Python callable target.
+- `docs/targets/otel-agent.md` - callable agent target with optional trace capture (any agent or multi-agent system).
+- `docs/targets/callable.md` - Python callable target (final-text only, the simplest path).
 - `docs/targets/model-and-tools.md` - hosted model and simple model+tools target.
 - `CONFIG_REFERENCE.md` - current YAML schema reference.
 - `examples/README.md` - example selection guide.
@@ -55,11 +55,12 @@ Do not rename schema fields unless explicitly asked. Some naming is still evolvi
 
 When helping a developer choose a target:
 
-1. If they have a framework agent, prefer `target.callable` plus trace capture through Phoenix/OpenInference.
-2. If they have custom orchestration, expose a callable entrypoint and emit OpenTelemetry spans around important tool calls, routing decisions, dynamic DAG steps, and framework internals.
-3. If they have a plain Python function, use `target.callable`.
-4. If they have a hosted model with a system prompt and optional tools, use `target.model` and optional `target.tools`.
-5. Simulated tools are useful for simple prompt-agent setups before real tool backends exist. They are not a replacement for tracing a real framework agent.
+1. If they have any agent or multi-agent system with a Python entry function (frameworks like LangGraph / CrewAI / OpenAI Agents SDK / DSPy / LlamaIndex / AutoGen / MAF, or custom orchestration), use `target.callable`. Trace capture through Phoenix/OpenInference is an optional upgrade — recommend it when the judge would benefit from seeing tool calls, routing, and intermediate decisions.
+2. If they have a plain Python function that wraps a hosted model, use `target.callable`.
+3. If they have a hosted model with a system prompt and optional tools, use `target.model` and optional `target.tools`.
+4. Simulated tools are useful for simple prompt-agent setups before real tool backends exist. They are not a replacement for evaluating a real agent or multi-agent system.
+
+Do not require customers to understand OpenTelemetry before their first eval. The plain callable path works without trace capture.
 
 Do not recommend an external connector path for customer-preview onboarding.
 

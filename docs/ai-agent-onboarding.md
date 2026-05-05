@@ -23,11 +23,12 @@ Current YAML names:
 - judge: pipeline.judge -> scores.jsonl and metrics.json
 
 Target selection:
-1. If my agent uses a framework such as LangGraph, LangChain, OpenAI Agents SDK, CrewAI, LlamaIndex, AutoGen/MAF, or DSPy, prefer a Python callable entrypoint plus trace capture using Phoenix/OpenInference.
-2. If my agent uses custom orchestration, expose a callable entrypoint and instrument important tool calls, routing decisions, dynamic DAG steps, and framework internals with OpenTelemetry spans.
-3. If my target is a plain Python function, use target.callable.
-4. If my target is only a hosted model with a system prompt, use target.model.
-5. If I have a prompt agent with tool schemas but no real tool backend yet, simulated tools can help, but they are not a replacement for tracing a real framework agent.
+1. If my agent or multi-agent system has any Python entry function (frameworks such as LangGraph, LangChain, OpenAI Agents SDK, CrewAI, LlamaIndex, AutoGen/MAF, DSPy — or custom orchestration with no framework), use target.callable. Trace capture using Phoenix/OpenInference is an optional upgrade for richer judge evidence.
+2. If my target is a plain Python function that wraps a hosted model, use target.callable.
+3. If my target is only a hosted model with a system prompt, use target.model.
+4. If I have a prompt agent with tool schemas but no real tool backend yet, simulated tools can help, but they are not a replacement for evaluating a real agent or multi-agent system.
+
+I do not need to understand OpenTelemetry to start. Trace capture is opt-in.
 
 Setup preference:
 - Prefer pip install for preview setup, especially on macOS:
@@ -42,9 +43,9 @@ Security:
 - Do not commit generated artifacts, traces, logs, or virtual environments.
 
 Ask me these questions first:
-1. What framework or runtime does my agent use?
+1. What runtime does my agent or multi-agent system use? (framework, custom orchestration, or plain hosted model)
 2. What function or endpoint should Adaptive Eval call?
 3. What behavior requirements should the eval spec test?
-4. Do I need trace capture to inspect tool calls, routing, dynamic DAG behavior, or framework internals?
+4. Optional: do I want trace capture so the judge can inspect tool calls, routing, dynamic DAG behavior, or framework internals? (Skippable on the first run.)
 5. What model should be used for generation and judging?
 ```

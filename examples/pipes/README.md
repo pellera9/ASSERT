@@ -17,4 +17,4 @@ These configs evaluate a health assistant with simple hosted-model and model+too
 | `health_assistant_simulated_tools.yaml` | hosted + fixed toolset | Tool schemas from a YAML file, simulator model generates responses. |
 | `health_assistant_generated_tools.yaml` | hosted + per-seed tools | Each seed carries its own tool definitions. |
 
-For real framework agents, prefer `target.callable` plus OTel trace capture. See [`..\travel_planner_langgraph\eval_config.yaml`](../travel_planner_langgraph/eval_config.yaml).
+For any agent or multi-agent system, use `target.callable`. OTel trace capture is an optional upgrade for richer judge evidence. See [`..\travel_planner_langgraph\eval_config.yaml`](../travel_planner_langgraph/eval_config.yaml).

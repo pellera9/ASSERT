@@ -1,6 +1,6 @@
 # Callable Target
 
-Use the callable target when your app or agent has a Python entry function.
+Use the callable target for any agent or multi-agent system with a Python entry function. This is the universal integration boundary — frameworks (LangGraph, CrewAI, OpenAI Agents SDK, DSPy, LlamaIndex, AutoGen / MAF, …), custom orchestration, REST clients, and thin model wrappers all qualify.
 
 ## Shape
 
@@ -39,15 +39,17 @@ The callable can return:
 - a structured model response supported by the runtime
 - a dictionary with text/content fields
 
-For the richest observability, combine callable target with OTel instrumentation when your callable runs a framework agent.
+## Optional: add trace capture for richer evidence
 
-## When to choose callable without OTel
+When the judge would benefit from seeing tool calls, routing, or intermediate decisions, add OpenTelemetry instrumentation around your callable. See [`otel-agent.md`](otel-agent.md) for the optional `target.trace` upgrade.
 
-Use plain callable when:
+## When the plain callable is enough
 
-- you want a quick integration
+Use the plain callable (no trace capture) when:
+
+- you want a quick first integration
 - final text is enough for the first eval
 - the target does not yet emit useful spans
 - you are evaluating a small wrapper around an existing system
 
-Upgrade to OTel when tool calls, routing, or intermediate decisions matter.
+Add trace capture later when tool calls, routing, or intermediate decisions matter to the judge.
