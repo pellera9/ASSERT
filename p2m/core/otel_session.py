@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import importlib
 import inspect
-import threading
 import uuid
+from contextlib import nullcontext
 from typing import Any
 
 from p2m.core.async_utils import invoke_callable
@@ -141,16 +141,16 @@ class OTelTracedSession:
         - ``span.id``: Each span → its own event (maximum granularity)
 
         When using ``LiveOTelExporter`` (singleton, shared span buffer), the
-        clear-invoke-export cycle is serialized via a lock to prevent
-        concurrent sessions from contaminating each other's span data.
+        clear-invoke-export cycle is serialized via an ``asyncio.Lock`` to
+        prevent concurrent sessions from contaminating each other's span
+        data. The lock MUST be ``asyncio.Lock`` (not ``threading.Lock``):
+        the rollout stage runs all sessions in one event loop, so holding a
+        sync threading lock across the inner ``await`` would block the loop
+        and deadlock when ``rollout.concurrency > 1``.
         """
-        # Acquire the live exporter lock for the entire clear-invoke-export
-        # cycle so concurrent OTelTracedSessions don't mix spans.
         from p2m.core.otel import LiveOTelExporter
-        lock = LiveOTelExporter._lock if self._live_otel else None
-        if lock:
-            lock.acquire()
-        try:
+        lock_ctx = LiveOTelExporter.get_lock() if self._live_otel else nullcontext()
+        async with lock_ctx:
             # Clear spans from previous turn so we only capture this turn's execution
             if self._live_exporter is not None:
                 self._live_exporter.clear()
@@ -188,9 +188,6 @@ class OTelTracedSession:
 
             # Collect traces for this turn
             turn_spans = self._exporter.export_session(turn_id)
-        finally:
-            if lock:
-                lock.release()
 
         validation = validate_spans(turn_spans)
 
