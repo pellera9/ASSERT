@@ -56,8 +56,9 @@ pipeline:
     model: { name: azure/gpt-5.4-mini, temperature: 0.7, max_tokens: 10000 }
     behavior_count: 6
 
-  # ── STAGE 1.5: DESIGN (Coverage Grid) ────────────────────────────
-  # Crosses behaviors with factors to ensure systematic coverage.
+  # ── STAGE 1.5: DESIGN (Coverage Grid) ─────────────────────────────────
+  # Required when `factors` are defined: crosses behaviors with factors
+  # to produce a coverage grid the seed generator draws from.
   design:
     model: { name: azure/gpt-5.4-mini, temperature: 0.7 }
 

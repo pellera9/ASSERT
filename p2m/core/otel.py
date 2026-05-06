@@ -15,8 +15,8 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import json
-import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -451,7 +451,27 @@ class LiveOTelExporter:
     _instance: "LiveOTelExporter | None" = None
     _setup_done: bool = False
     _sdk_exporter: Any = None
-    _lock: threading.Lock = threading.Lock()
+    # Per-event-loop async lock, created lazily on first use. A class-level
+    # ``asyncio.Lock()`` would bind to whichever loop happened to be running
+    # at first use and then raise in any subsequent ``asyncio.run()``. We
+    # cache (loop, lock) and recreate when the loop changes so:
+    #   - within one rollout (one event loop), all concurrent sessions share
+    #     the same lock and serialize the clear-invoke-export cycle;
+    #   - tests / repeated runs that create new event loops still work.
+    # NOTE: ``threading.Lock`` MUST NOT be used here — it would block the
+    # entire event loop across the inner ``await`` and deadlock when
+    # ``rollout.concurrency > 1``.
+    _lock: asyncio.Lock | None = None
+    _lock_loop: asyncio.AbstractEventLoop | None = None
+
+    @classmethod
+    def get_lock(cls) -> asyncio.Lock:
+        """Return an ``asyncio.Lock`` bound to the current running loop."""
+        loop = asyncio.get_running_loop()
+        if cls._lock is None or cls._lock_loop is not loop:
+            cls._lock = asyncio.Lock()
+            cls._lock_loop = loop
+        return cls._lock
 
     def __new__(cls) -> "LiveOTelExporter":
         if cls._instance is None:
