@@ -108,8 +108,8 @@ class SystematizationStageTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(schema_name, "systematization")
             self.assertTrue(options.web_search)
             self.assertEqual(options.reasoning_effort, "high")
-            self.assertIn("# Concept Label\nharmful advice", prompt)
-            self.assertIn("# Source Risk Text\nHarmful advice", prompt)
+            self.assertIn("## Concept Label\nharmful advice", prompt)
+            self.assertIn("## Background Concept of Interest\nHarmful advice", prompt)
             return ModelResponse(
                 model=model,
                 parsed={
