@@ -27,7 +27,7 @@ p2m results status travel-planner-langgraph-v1 demo-1
 | Evaluate any agent or multi-agent system (recommended) | `travel_planner_langgraph\eval_config.yaml` | Flagship. Uses `target.callable` with `target.trace.backend: phoenix` so the judge sees tool calls and routing. |
 | Understand framework instrumentation breadth | `phoenix_auto_trace\README.md` | Same travel-planner idea across multiple framework auto-instrumentation paths. |
 | Run a simple hosted-model eval | `pipes\health_assistant.yaml` | Good smoke test for a single LLM target with a system prompt. |
-| Evaluate a prompt agent with planned tools but no backend | `pipes\health_assistant_simulated_tools.yaml` | Uses a fixed tool schema and simulated tool responses. |
+| Evaluate a Prompt Agent with planned tools but no backend | `pipes\health_assistant_simulated_tools.yaml` | Uses a fixed tool schema and simulated tool responses. |
 | Evaluate a hosted target with Python tool functions | `pipes\health_assistant_sandbox.yaml` | Requires Docker. Use when you want actual tool execution around a hosted model. |
 
 ## Layout
@@ -36,7 +36,7 @@ p2m results status travel-planner-langgraph-v1 demo-1
 examples/
 ├── travel_planner_langgraph/   flagship callable-agent example with OTel trace capture
 ├── phoenix_auto_trace/         framework instrumentation gallery
-├── pipes/                      simple hosted-model and model+tools configs
+├── pipes/                      simple hosted-model and Prompt Agent configs
 ├── concepts/                   reusable eval spec definitions
 └── agents/                     simple tool modules and tool schemas
 ```

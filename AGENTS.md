@@ -27,7 +27,7 @@ Start with these files:
 - `docs/quickstart.md` - LangGraph travel planner walkthrough.
 - `docs/targets/overview.md` - target decision tree.
 - `docs/targets/callable.md` - Python callable target for any agent or multi-agent system, with OpenTelemetry trace capture as the recommended integration path.
-- `docs/targets/model-and-tools.md` - hosted model and simple model+tools target.
+- `docs/targets/model-and-tools.md` - Prompt Agent target (hosted model + system prompt + optional tool schema; runtime owns the tool-call loop).
 - `CONFIG_REFERENCE.md` - current YAML schema reference.
 - `examples/README.md` - example selection guide.
 
@@ -57,7 +57,9 @@ When helping a developer choose a target:
 1. If they have any agent or multi-agent system with a Python entry function (frameworks like LangGraph / CrewAI / OpenAI Agents SDK / DSPy / LlamaIndex / AutoGen / MAF, or custom orchestration), use `target.callable` **with `target.trace`** so Phoenix/OpenInference (or the agent's own OTel SDK spans) feed tool calls, routing, and intermediate decisions to the judge. This is the recommended integration path.
 2. If they have a plain Python function that wraps a hosted model, use `target.callable` (still with OTel trace capture if the wrapper does anything meaningful — model call, retry, post-processing — that the judge should see).
 3. If they have a hosted model with a system prompt and optional tools, use `target.model` and optional `target.tools`.
-4. Simulated tools are useful for simple prompt-agent setups before real tool backends exist. They are not a replacement for evaluating a real agent or multi-agent system.
+4. Simulated tools are useful for Prompt Agent setups (declared in YAML, runtime owns the loop) before real tool backends exist. They are not a replacement for evaluating a real agent or multi-agent system.
+
+**Terminology divergence to know about**: in customer-facing docs we call `target.model + target.tools` the **Prompt Agent target** (the agent is declared in YAML; the runtime owns the tool-call loop). In code, the corresponding session class is `HostedSession` (`p2m/core/session.py`). Use the customer-facing name in docs and the class name in code references — this divergence is intentional and not worth renaming.
 
 Recommend a plain callable without `target.trace` only when the target is a black-box API that cannot be instrumented, or for quick pipeline smoke tests. Flag this as a customization fallback, not the recommended path.
 

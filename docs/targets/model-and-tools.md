@@ -1,6 +1,8 @@
-# Model and Tools Target
+# Prompt Agent Target (model + tools)
 
-Use the model and tools target when your "agent" is essentially a hosted model with a system prompt — and optionally a tool schema. The key value: **you can test the prompt and toolset design before any agent code is written.**
+A **Prompt Agent** is an agent declared in YAML — a hosted model + a system prompt + an optional tool schema — with no orchestration code. The runtime owns the tool-call loop (up to 10 rounds, real Python tools or LLM-simulated tool responses); you own the prompt and the schema.
+
+The key value: **you can test the prompt and toolset design before any agent code is written.**
 
 ## Test-driven prompt + toolset design
 
@@ -27,7 +29,7 @@ pipeline:
 
 The eval runs end-to-end: policy → test cases → rollout (with simulated tools) → judge verdicts on tool selection, argument correctness, and constraint handling. When the prompt and toolset look right, swap the simulator for real tool implementations (next section) without touching the rest of the config.
 
-## Hosted model with real Python tools
+## Prompt Agent with real Python tools
 
 Once tools are implemented, point at the Python module that exposes them:
 
@@ -45,7 +47,7 @@ The toolset, system prompt, and rest of the eval config stay the same — only `
 
 ## Hosted model only (smoke)
 
-The smallest configuration — model + system prompt, no tools — for sanity-checking the eval pipeline against a single prompt agent:
+The smallest configuration — model + system prompt, no tools — for sanity-checking the eval pipeline against a Prompt Agent with no tool surface:
 
 ```yaml
 pipeline:
@@ -62,4 +64,4 @@ pipeline:
 
 ## When to switch to the callable target
 
-The model+tools target is for prompt-shaped "agents" — one model in a loop with optional tools. Once you have a real agent (LangGraph, CrewAI, LlamaIndex, OpenAI Agents SDK, AutoGen / MAF, DSPy, custom orchestration, …), switch to the [callable target](callable.md). The recommended OTel-traced integration captures tool calls, routing, and intermediate decisions — visibility the model+tools target cannot give you.
+The Prompt Agent target is for agents declared in YAML — one model in a runtime-owned tool loop. Once you have a real agent implemented in code (LangGraph, CrewAI, LlamaIndex, OpenAI Agents SDK, AutoGen / MAF, DSPy, custom orchestration, …), switch to the [callable target](callable.md). At that point your code owns the loop, and the recommended OTel-traced integration captures routing, sub-agent decisions, and intermediate tool calls — visibility the Prompt Agent target cannot give you because, by design, you didn't write the loop.

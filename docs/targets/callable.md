@@ -112,7 +112,7 @@ def chat(message: str, history: list[dict[str, str]]) -> str:   # multi-turn
     ...
 ```
 
-`history` follows the [OpenAI / LiteLLM chat-messages format](https://platform.openai.com/docs/api-reference/chat/create#chat-create-messages), filtered to `user` / `assistant` roles only. The current user turn is at `history[-1]`; `message` is a convenience for callables that ignore history. System prompts are owned by your callable (`target.system_prompt` is consumed only by the model+tools target).
+`history` follows the [OpenAI / LiteLLM chat-messages format](https://platform.openai.com/docs/api-reference/chat/create#chat-create-messages), filtered to `user` / `assistant` roles only. The current user turn is at `history[-1]`; `message` is a convenience for callables that ignore history. System prompts are owned by your callable (`target.system_prompt` is consumed only by the Prompt Agent target).
 
 To round-trip directly into LiteLLM, pass `history` as `messages` — do **not** re-append `message` (it is already at `history[-1]`):
 

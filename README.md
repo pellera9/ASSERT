@@ -93,10 +93,10 @@ Pick a target based on how your agent is built.
 | Your target looks like... | Use this path | Start here |
 |---|---|---|
 | Any agent or multi-agent system you can invoke from Python (LangGraph, CrewAI, OpenAI Agents SDK, DSPy, LlamaIndex, AutoGen / MAF, custom orchestration, …) | **Callable target with OTel traces (recommended)**: point `target.callable` at your entry function and add `target.trace` so Phoenix/OpenInference (or your own OTel SDK spans) feed tool calls, routing, model calls, and latency to the judge | [`docs/targets/callable.md`](docs/targets/callable.md) |
-| A hosted model with a system prompt, optionally with tools | **Model + tools target**: `target.model`, `target.system_prompt`, and optional `target.tools` | [`docs/targets/model-and-tools.md`](docs/targets/model-and-tools.md) |
+| A system prompt + tool schema, no orchestration code yet | **Prompt Agent target** (`target.model`, `target.system_prompt`, `target.tools`): the runtime owns the tool-call loop (up to 10 rounds, real or simulated tools). Best for test-driven prompt + toolset design before any agent is implemented | [`docs/targets/model-and-tools.md`](docs/targets/model-and-tools.md) |
 | A black-box API you cannot instrument | **Plain callable (customization fallback, not recommended)**: `target.callable` with no `target.trace`. The judge sees only the final response — use only when instrumentation is impossible | [`docs/targets/callable.md`](docs/targets/callable.md#customization-without-traces) |
 
-**Use simulated tools intentionally:** simulated tools are helpful for prompt agents when real backends are not ready. They are not a substitute for tracing a real multi-agent framework.
+**Use simulated tools intentionally:** simulated tools are helpful for Prompt Agents when real backends are not ready. They are not a substitute for tracing a real multi-agent framework.
 
 ## Examples
 
@@ -105,7 +105,7 @@ Pick a target based on how your agent is built.
 | [`examples/travel_planner_langgraph`](examples/travel_planner_langgraph/) | Full pipeline with `target.callable` + Phoenix OTel trace capture, generated test cases, and judge dimensions for quality + safety | Start here for any agent or multi-agent system |
 | [`examples/phoenix_auto_trace`](examples/phoenix_auto_trace/) | The same travel-planner idea across 33 framework instrumentation paths | Understanding framework breadth |
 | [`examples/pipes/health_assistant.yaml`](examples/pipes/health_assistant.yaml) | Simple hosted model target with a system prompt | Quick smoke test for a single model |
-| [`examples/pipes/health_assistant_simulated_tools.yaml`](examples/pipes/health_assistant_simulated_tools.yaml) | Hosted model with simulated tool responses from a fixed schema | Prompt agents with planned tools but no backend yet |
+| [`examples/pipes/health_assistant_simulated_tools.yaml`](examples/pipes/health_assistant_simulated_tools.yaml) | Hosted model with simulated tool responses from a fixed schema | Prompt Agents with planned tools but no backend yet |
 
 See [`examples/README.md`](examples/README.md).
 
@@ -154,7 +154,7 @@ Stable enough to try:
 - spec -> behavior categories -> test cases -> execute -> judge workflow
 - local artifact layout
 - `target.callable` with OTel trace capture (Phoenix/OpenInference for 33+ frameworks, or your own OTel SDK spans) — the recommended integration path
-- hosted model and model+tools targets
+- hosted model and Prompt Agent targets
 
 Still evolving:
 

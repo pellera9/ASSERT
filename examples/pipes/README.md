@@ -10,7 +10,7 @@ p2m run --config examples/pipes/<name>.yaml
 
 ## Simple target shapes
 
-These configs evaluate a health assistant with simple hosted-model and model+tools targets. They are useful smoke tests, but the flagship framework-agent example is `examples\travel_planner_langgraph\eval_config.yaml`.
+These configs evaluate a health assistant with simple hosted-model and Prompt Agent targets. They are useful smoke tests, but the flagship framework-agent example is `examples\travel_planner_langgraph\eval_config.yaml`.
 
 | Config | Target | What it demonstrates |
 |---|---|---|
