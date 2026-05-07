@@ -61,7 +61,7 @@ pipeline:
     target:
       callable: examples.travel_planner_neurosan.agent:plan_trip_sync
       trace:
-        backend: otel        # generic OTel exporter (vs. backend: phoenix for auto-instrument)
+        backend: phoenix
         group_by: session.id
 ```
 
@@ -86,22 +86,23 @@ The callable can be sync or async. The signature determines what the runtime pas
 def chat_sync(message: str) -> str:
     return "assistant response"
 
-# Multi-turn — also receives prior user/assistant turns.
+# Multi-turn — also receives the full conversation as OpenAI-format messages.
 def chat_sync(message: str, history: list[dict[str, str]]) -> str:
     ...
 ```
 
-`history` is OpenAI / LiteLLM message format with one Adaptive-Eval-specific convention: the **current** user turn is split off into `message`, and `history` contains only **prior** turns:
+`history` is the OpenAI / LiteLLM messages list, filtered to user and assistant roles only (system and tool roles are stripped). The **current** user turn is included in `history[-1]`; `message: str` is a convenience giving you the same latest-user text directly so simple `fn(message) -> str` callables can ignore the history entirely.
 
 ```python
-history == [
-    {"role": "user", "content": "..."},        # earlier user turn
-    {"role": "assistant", "content": "..."},   # prior assistant reply
-    # ...
-]
+# message  == "Plan 5 days in Tokyo"  (latest user turn, as a string)
+# history  == [
+#     {"role": "user",      "content": "I have $3000"},      # earlier user turn
+#     {"role": "assistant", "content": "Where to?"},          # prior assistant reply
+#     {"role": "user",      "content": "Plan 5 days in Tokyo"}, # ← same as `message`
+# ]
 ```
 
-To plug `message + history` straight into a LiteLLM call inside your callable:
+To round-trip directly into LiteLLM, pass `history` as the messages list — do **not** re-append `message` (it is already at `history[-1]`):
 
 ```python
 import litellm
@@ -109,7 +110,7 @@ import litellm
 def chat(message: str, history: list[dict[str, str]]) -> str:
     response = litellm.completion(
         model="azure/gpt-5.4-mini",
-        messages=history + [{"role": "user", "content": message}],
+        messages=history,   # already contains the current user turn
     )
     return response.choices[0].message.content
 ```
