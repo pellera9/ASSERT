@@ -854,6 +854,7 @@ async def run_rollout(
     config_path: Path | None = None,
     strict: bool = False,
     forced: bool = False,
+    rewrite_seed_path: bool = True,
 ) -> dict[str, Any]:
     """Run all seed rollouts and write the transcript artifact."""
     if not target.model and not target.connector and not target.callable and not target.endpoint:
@@ -884,7 +885,8 @@ async def run_rollout(
     )
     if not seeds_list:
         raise ValueError("No seeds found")
-    write_jsonl(resolved_seed_path, canonical_rows)
+    if rewrite_seed_path:
+        write_jsonl(resolved_seed_path, canonical_rows)
 
     resolved_run_id = str(run_id or uuid.uuid4().hex[:8]).lower()
     out_dir = resolve_path(save_dir or (Path("artifacts/outputs") / resolved_run_id))
@@ -1022,10 +1024,13 @@ async def run_rollout(
         # remain unaffected. Bypassing the wrapper here keeps the
         # per-seed progress visible without disturbing whatever the
         # instrumentation is doing with sys.stderr.
-        sys.__stderr__.write(
-            f"  rollout [{done}/{total}] {status} {kind_tag}{label}\n"
-        )
-        sys.__stderr__.flush()
+        progress_line = f"  rollout [{done}/{total}] {status} {kind_tag}{label}\n"
+        try:
+            sys.__stderr__.write(progress_line)
+            sys.__stderr__.flush()
+        except OSError:
+            sys.stderr.write(progress_line)
+            sys.stderr.flush()
 
     if errors:
         raise errors[0]
@@ -1047,7 +1052,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("rollout requires a target")
     cfg = resolve_stage_paths(
         {
-            "seed_path": raw_cfg.get("seed_path") or str(Path(ctx["suite_root"]) / "seeds.jsonl"),
+            "seed_path": raw_cfg.get("seed_path") or ctx.get("seeds_path") or str(Path(ctx["suite_root"]) / "seeds.jsonl"),
             "save_dir": raw_cfg.get("save_dir") or str(ctx["run_root"]),
             "max_tokens": raw_cfg.get("max_tokens", DEFAULT_ROLLOUT_MAX_TOKENS),
             "strict": raw_cfg.get("strict", False) or ctx.get("strict", False),
@@ -1055,6 +1060,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
         cfg_path=ctx["config_path"],
         artifacts_root=ctx["artifacts_root"],
     )
+    seed_artifact_ref = (ctx.get("artifact_versions") or {}).get("seeds")
     result = await run_rollout(
         seed_path=cfg["seed_path"],
         save_dir=cfg["save_dir"],
@@ -1065,6 +1071,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
         config_path=ctx["config_path"],
         strict=cfg.get("strict", False),
         forced=bool(ctx.get("_stage_forced", False)),
+        rewrite_seed_path=raw_cfg.get("seed_path") is not None or not isinstance(seed_artifact_ref, dict),
     )
     target_obj = ctx["target"]
     target_model = ""
@@ -1072,6 +1079,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
         target_model = target_obj.model.name or ""
     return {
         "transcripts_path": result["transcripts_path"],
+        "seed_artifact_version": seed_artifact_ref,
         "_summary": {
             "count": result.get("count", 0),
             "new_count": result.get("new_count", 0),

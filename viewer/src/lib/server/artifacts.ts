@@ -19,6 +19,7 @@ export const VIEWER_SCORE_INDEX_FILE = 'viewer_score_index.json';
 export const SUITE_METADATA_FILE = 'suite.json';
 export const SUITE_POLICY_FILE = 'policy.json';
 export const SUITE_SYSTEMATIZATION_FILE = 'systematization.json';
+export const SUITE_ARTIFACTS_DIR = 'artifacts';
 export const VIEWER_READ_MODEL_SCHEMA_VERSION = 1;
 export const VIEWER_READ_MODEL_GENERATOR_VERSION = 'viewer-read-model-v1';
 
@@ -182,6 +183,38 @@ function viewerIndexKey(kind: 'prompt' | 'scenario', seedId: string): string {
 
 function viewerArtifactPath(runDir: string, fileName: string): string {
 	return path.join(runDir, VIEWER_CACHE_DIR, fileName);
+}
+
+function manifestRelativePath(baseDir: string, rawPath: string): string {
+	const parts = rawPath.split(/[\\/]+/).filter((part) => part.length > 0 && part !== '.');
+	return path.join(baseDir, ...parts);
+}
+
+function manifestArtifactPath(suiteDir: string, rawPath: unknown): string | null {
+	if (typeof rawPath !== 'string' || rawPath.length === 0) return null;
+	if (path.isAbsolute(rawPath)) return rawPath;
+	return manifestRelativePath(suiteDir, rawPath);
+}
+
+function runSeedArtifactPath(suiteDir: string, manifest: Manifest | null): string {
+	const seedArtifact = manifest?.artifact_versions?.seeds;
+	const relativePath = manifestArtifactPath(suiteDir, seedArtifact?.relative_path);
+	if (relativePath) return relativePath;
+	const artifactPath = manifestArtifactPath(suiteDir, seedArtifact?.path);
+	if (artifactPath) return artifactPath;
+	return path.join(suiteDir, SUITE_SEEDS_FILE);
+}
+
+function runSeedRows(
+	suiteDir: string,
+	manifest: Manifest | null,
+	seedRows: UnifiedSeedRow[] | undefined
+): UnifiedSeedRow[] {
+	const seedArtifact = manifest?.artifact_versions?.seeds;
+	if (seedArtifact?.relative_path || seedArtifact?.path) {
+		return readJsonlFile<UnifiedSeedRow>(runSeedArtifactPath(suiteDir, manifest), { missingOk: true });
+	}
+	return seedRows ?? readJsonlFile<UnifiedSeedRow>(path.join(suiteDir, SUITE_SEEDS_FILE), { missingOk: true });
 }
 
 function rebuildViewerInstruction(runDir: string): string {
@@ -454,6 +487,19 @@ export function listSubdirectories(dirPath: string): string[] {
 	}
 }
 
+function listRunIds(suiteDir: string): string[] {
+	return listSubdirectories(suiteDir).filter((entry) => {
+		if (entry === SUITE_ARTIFACTS_DIR) return false;
+		const runDir = path.join(suiteDir, entry);
+		return (
+			fs.existsSync(path.join(runDir, RUN_MANIFEST_FILE)) ||
+			fs.existsSync(path.join(runDir, RUN_CONFIG_FILE)) ||
+			fs.existsSync(path.join(runDir, RUN_TRANSCRIPTS_FILE)) ||
+			fs.existsSync(path.join(runDir, RUN_SCORES_FILE))
+		);
+	});
+}
+
 export function isSafeArtifactId(id: string): boolean {
 	return id.length > 0 && id.length <= 255 && SAFE_ID_RE.test(id) && !id.includes('..');
 }
@@ -576,7 +622,7 @@ export function loadSuiteSnapshot(suiteId: string): SuiteSnapshot | null {
 		suite,
 		policy,
 		seedRows: readJsonlFile<UnifiedSeedRow>(path.join(suiteDir, SUITE_SEEDS_FILE), { missingOk: true }),
-		runIds: listSubdirectories(suiteDir),
+		runIds: listRunIds(suiteDir),
 		systematization: readJsonFile<Record<string, unknown>>(
 			path.join(suiteDir, SUITE_SYSTEMATIZATION_FILE),
 			{ missingOk: true }
@@ -607,21 +653,20 @@ export function loadRunSnapshot(
 		runDir,
 		manifest,
 		config,
-			seedRows:
-				seedRows ?? readJsonlFile<UnifiedSeedRow>(path.join(suiteDirPath(suiteId), SUITE_SEEDS_FILE), { missingOk: true }),
-			scoreRows: readJsonlFile<UnifiedScoreRow>(path.join(runDir, RUN_SCORES_FILE), { missingOk: true }),
-			transcriptRows: !includeTranscripts
-				? []
-				: rolloutRunning
-					? readLiveTranscriptJsonlFile<UnifiedTranscriptRow>(path.join(runDir, RUN_TRANSCRIPTS_FILE), {
-							missingOk: true,
-							lineMatcher: transcriptLineMatcher
-						})
-					: readJsonlFile<UnifiedTranscriptRow>(path.join(runDir, RUN_TRANSCRIPTS_FILE), {
-							missingOk: true,
-							lineMatcher: transcriptLineMatcher
-						}),
-			runtimeMode: loadRunRuntimeMode(config)
+		seedRows: runSeedRows(suiteDirPath(suiteId), manifest, seedRows),
+		scoreRows: readJsonlFile<UnifiedScoreRow>(path.join(runDir, RUN_SCORES_FILE), { missingOk: true }),
+		transcriptRows: !includeTranscripts
+			? []
+			: rolloutRunning
+				? readLiveTranscriptJsonlFile<UnifiedTranscriptRow>(path.join(runDir, RUN_TRANSCRIPTS_FILE), {
+						missingOk: true,
+						lineMatcher: transcriptLineMatcher
+					})
+				: readJsonlFile<UnifiedTranscriptRow>(path.join(runDir, RUN_TRANSCRIPTS_FILE), {
+						missingOk: true,
+						lineMatcher: transcriptLineMatcher
+					}),
+		runtimeMode: loadRunRuntimeMode(config)
 	};
 }
 

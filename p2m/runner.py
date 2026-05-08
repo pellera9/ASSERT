@@ -23,6 +23,16 @@ from p2m.config import (
     load_config,
     load_runtime_context,
 )
+from p2m.core.artifact_cache import (
+    activate_latest_artifacts,
+    activate_artifact_plan,
+    finalize_artifact_plan,
+    is_cacheable_stage,
+    prepare_artifact_plan,
+    refresh_compatibility_files,
+    supports_artifact_cache,
+    update_latest,
+)
 from p2m.core.config_model import RunManifest, SuiteMetadata
 from p2m.core.io import write_json
 from p2m.core.model_client import (
@@ -86,6 +96,22 @@ def _write_manifest(manifest: RunManifest, run_root: Path) -> None:
     write_json(manifest_path, manifest.to_dict())
 
 
+def _record_run_artifacts(manifest: RunManifest, ctx: dict[str, Any], run_root: Path) -> None:
+    """Copy resolved artifact references into the run manifest and sidecar."""
+
+    artifacts = ctx.get("artifact_versions") or {}
+    if not artifacts:
+        return
+    manifest.artifact_versions = artifacts
+    write_json(
+        run_root / "artifacts.json",
+        {
+            "schema_version": 1,
+            "artifacts": artifacts,
+        },
+    )
+
+
 def _progress(line: str) -> None:
     """Write a runner progress line to the original stderr.
 
@@ -97,8 +123,12 @@ def _progress(line: str) -> None:
     sys.__stderr__ which the interpreter keeps as the unwrapped
     original. No effect on processes that don't touch sys.stderr.
     """
-    sys.__stderr__.write(line + "\n")
-    sys.__stderr__.flush()
+    try:
+        sys.__stderr__.write(line + "\n")
+        sys.__stderr__.flush()
+    except OSError:
+        sys.stderr.write(line + "\n")
+        sys.stderr.flush()
 
 
 def _print_stage_start(stage_name: str, ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> None:
@@ -355,6 +385,15 @@ def run_pipeline(
             }
             requested_force_stages = requested_force_stages.union(cascade)
 
+    suite_root = Path(ctx["suite_root"])
+    suite_root.mkdir(parents=True, exist_ok=True)
+    _write_suite_metadata(ctx)
+    ctx.setdefault("artifact_versions", {})
+    artifact_plans: dict[str, Any] = {}
+    cache_supported = supports_artifact_cache(ctx)
+    if cache_supported:
+        activate_latest_artifacts(ctx)
+
     stages_to_run: list[tuple[str, Any, dict[str, Any]]] = []
     for stage_name, raw_cfg in ctx["stages"]:
         if not raw_cfg.get("enabled", True):
@@ -362,7 +401,31 @@ def run_pipeline(
 
         module = STAGES[stage_name]
 
-        if module.SCOPE == "suite" and module.SUITE_OUTPUT and stage_name not in requested_force_stages:
+        if cache_supported and module.SCOPE == "suite" and is_cacheable_stage(stage_name):
+            forced = stage_name in requested_force_stages
+            plan = prepare_artifact_plan(
+                ctx=ctx,
+                stage_name=stage_name,
+                raw_cfg=raw_cfg,
+                forced=forced,
+            )
+            ref = activate_artifact_plan(ctx, plan)
+            artifact_plans[stage_name] = plan
+            if plan.reused:
+                refresh_compatibility_files(ctx, stage_name, plan.output_paths)
+                update_latest(ctx, stage_name, ref)
+                _progress(
+                    f"  Skipping {stage_name} (reusing {stage_name} artifact "
+                    f"{plan.version}; input hashes match, use --force-stage {stage_name} to regenerate)"
+                )
+                continue
+
+        if (
+            not (cache_supported and module.SCOPE == "suite" and is_cacheable_stage(stage_name))
+            and module.SCOPE == "suite"
+            and module.SUITE_OUTPUT
+            and stage_name not in requested_force_stages
+        ):
             output_path = Path(ctx["suite_root"]) / module.SUITE_OUTPUT
             if output_path.exists():
                 _progress(f"  Skipping {stage_name} (output already exists, use --force-stage {stage_name} to regenerate)")
@@ -370,9 +433,6 @@ def run_pipeline(
 
         stages_to_run.append((stage_name, module, raw_cfg))
 
-    suite_root = Path(ctx["suite_root"])
-    suite_root.mkdir(parents=True, exist_ok=True)
-    _write_suite_metadata(ctx)
     run_root = Path(ctx["run_root"]) if ctx.get("run_root") else None
     selected_run_stage = any(module.SCOPE == "run" for _, module, _ in stages_to_run)
     manifest = None
@@ -388,6 +448,7 @@ def run_pipeline(
     for stage_name, module, raw_cfg in stages_to_run:
         if manifest is not None and module.SCOPE == "run":
             manifest.stages[stage_name] = "running"
+            _record_run_artifacts(manifest, ctx, run_root)
             _write_manifest(manifest, run_root)
         _print_stage_start(stage_name, ctx, raw_cfg)
         stage_start = time.monotonic()
@@ -400,6 +461,13 @@ def run_pipeline(
         ctx["_stage_forced"] = stage_name in requested_force_stages
         try:
             stage_result = asyncio.run(module.run(ctx, raw_cfg)) or {}
+            if (
+                cache_supported
+                and module.SCOPE == "suite"
+                and is_cacheable_stage(stage_name)
+                and stage_name in artifact_plans
+            ):
+                finalize_artifact_plan(ctx, artifact_plans[stage_name])
             ok = True
         except (LLMAuthError, LLMInputError, LLMRateLimitError, LLMProviderError) as exc:
             # Classified LLM errors already carry a clean, actionable message.
@@ -424,6 +492,7 @@ def run_pipeline(
         if manifest is not None and module.SCOPE == "run":
             manifest.stages[stage_name] = "completed" if ok else "failed"
             manifest.status = "running" if ok else "failed"
+            _record_run_artifacts(manifest, ctx, run_root)
             _write_manifest(manifest, run_root)
 
         if ok and module.SCOPE == "suite":
@@ -458,5 +527,6 @@ def run_pipeline(
 
     manifest.ended_at = datetime.now(timezone.utc).isoformat()
     manifest.status = "completed" if failed_stage is None else "failed"
+    _record_run_artifacts(manifest, ctx, run_root)
     _write_manifest(manifest, run_root)
     return 0 if failed_stage is None else 1

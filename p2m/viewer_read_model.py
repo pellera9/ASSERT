@@ -50,6 +50,30 @@ def _remove_legacy_viewer_files(run_dir: Path) -> None:
         legacy_path.unlink(missing_ok=True)
 
 
+def _manifest_relative_path(base_dir: Path, raw_path: str) -> Path:
+    parts = [part for part in raw_path.replace("\\", "/").split("/") if part and part != "."]
+    return base_dir.joinpath(*parts)
+
+
+def _seed_artifact_path(suite_dir: Path, manifest: dict[str, Any] | None) -> Path:
+    """Return the seed artifact path selected by a run, with legacy fallback."""
+
+    artifacts = manifest.get("artifact_versions") if isinstance(manifest, dict) else None
+    if isinstance(artifacts, dict):
+        seeds = artifacts.get("seeds")
+        if isinstance(seeds, dict):
+            raw_relative = seeds.get("relative_path")
+            if isinstance(raw_relative, str) and raw_relative:
+                return _manifest_relative_path(suite_dir, raw_relative)
+            raw_path = seeds.get("path")
+            if isinstance(raw_path, str) and raw_path:
+                path = Path(raw_path)
+                if path.is_absolute():
+                    return path
+                return _manifest_relative_path(suite_dir, raw_path)
+    return suite_dir / "seeds.jsonl"
+
+
 def _load_json_file(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -410,8 +434,9 @@ def build_run_viewer_artifacts(run_dir: Path, *, suite_dir: Path | None = None) 
     run_dir = run_dir.resolve()
     suite_dir = (suite_dir or run_dir.parent).resolve()
     relative_root = run_dir
-    seeds_path = suite_dir / "seeds.jsonl"
     manifest_path = run_dir / "manifest.json"
+    manifest = _load_json_file(manifest_path) if manifest_path.exists() else None
+    seeds_path = _seed_artifact_path(suite_dir, manifest)
     config_path = run_dir / "config.yaml"
     transcripts_path = run_dir / "transcripts.jsonl"
     scores_path = run_dir / "scores.jsonl"
@@ -434,8 +459,6 @@ def build_run_viewer_artifacts(run_dir: Path, *, suite_dir: Path | None = None) 
         }
 
     config = _load_yaml_file(config_path)
-    if manifest_path.exists():
-        _load_json_file(manifest_path)
     runtime_mode = _runtime_mode(config)
 
     transcript_by_seed: dict[tuple[str, str], dict[str, Any]] = {}

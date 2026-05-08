@@ -240,6 +240,54 @@ class RolloutStageTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured_messages[0].role, "system")
         self.assertEqual(captured_messages[0].content, "Per-seed prompt")
 
+    async def test_run_rollout_can_leave_versioned_seed_file_unchanged(self) -> None:
+        seed_row = {
+            "kind": "prompt",
+            "seed_id": "original-seed-id",
+            "seed": {"description": "seed prompt"},
+            "concept": "Risk",
+            "factors": {"behavior": "behavior-a"},
+        }
+
+        class FakeSession:
+            runtime_mode = "chat"
+
+            async def open(self) -> None:
+                return None
+
+            async def close(self) -> None:
+                return None
+
+            async def run_turn(self, initial_messages):
+                return TurnResult(
+                    text="model response",
+                    state_messages=list(initial_messages) + [Message(role="assistant", content="model response")],
+                    interaction_messages=[
+                        {"role": "user", "content": "seed prompt"},
+                        {"role": "assistant", "content": "model response"},
+                    ],
+                    raw={"response": {"content": "model response"}},
+                )
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            seed_path = tmp_path / "seeds.jsonl"
+            out_dir = tmp_path / "run"
+            original_seed_text = json.dumps(seed_row) + "\n"
+            seed_path.write_text(original_seed_text, encoding="utf-8")
+
+            with patch("p2m.stages.rollout._build_hosted_session", return_value=FakeSession()):
+                await run_rollout(
+                    seed_path=str(seed_path),
+                    target=TargetConfig(model="azure/gpt-5.4"),
+                    evaluation=EvaluationConfig(judge=JudgeConfig(model="azure/gpt-5.4")),
+                    save_dir=str(out_dir),
+                    run_id="run-rollout",
+                    rewrite_seed_path=False,
+                )
+
+            self.assertEqual(seed_path.read_text(encoding="utf-8"), original_seed_text)
+
     async def test_run_rollout_fails_when_viewer_artifact_build_fails(self) -> None:
         seed_row = {
             "kind": "prompt",

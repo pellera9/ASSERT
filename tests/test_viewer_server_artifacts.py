@@ -181,6 +181,88 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             self.assertNotIn("permissible", prompt_rows[0])
             self.assertEqual(audit_rows, [])
 
+    def test_build_viewer_read_model_uses_versioned_seed_artifact_from_manifest(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            suite_dir = tmp_root / "suite-a"
+            run_dir = suite_dir / "run-a"
+            seeds_path = suite_dir / "artifacts" / "seeds" / "v0001" / "seeds.jsonl"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            seeds_path.parent.mkdir(parents=True, exist_ok=True)
+
+            seeds_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "prompt",
+                        "seed_id": "seed-1",
+                        "concept": "concept",
+                        "factors": {"behavior": "versioned behavior"},
+                        "seed": {"description": "Prompt seed"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (run_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "stages": {"rollout": "completed", "judge": "completed"},
+                        "artifact_versions": {
+                            "seeds": {
+                                "version": "v0001",
+                                "relative_path": "artifacts\\seeds\\v0001\\seeds.jsonl",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "config.yaml").write_text(
+                "pipeline:\n  rollout:\n    target:\n      model:\n        name: target-model\n",
+                encoding="utf-8",
+            )
+            (run_dir / "transcripts.jsonl").write_text(
+                json.dumps(
+                    {
+                        "kind": "prompt",
+                        "seed_id": "seed-1",
+                        "concept": "concept",
+                        "target": "target-model",
+                        "events": [],
+                        "llm_calls": [],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (run_dir / "scores.jsonl").write_text(
+                json.dumps(
+                    {
+                        "kind": "prompt",
+                        "seed_id": "seed-1",
+                        "concept": "concept",
+                        "judge_model": "judge-model",
+                        "target": "target-model",
+                        "judge_status": "ok",
+                        "verdict": {
+                            "dimensions": {"policy_violation": False},
+                            "justification": "clear",
+                            "node_judgments": [],
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            build_run_viewer_artifacts(run_dir)
+            prompt_rows = json.loads(
+                (run_dir / ".viewer" / "viewer_prompt_rows.json").read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(prompt_rows[0]["factors"]["behavior"], "versioned behavior")
+
     def test_build_viewer_read_model_rejects_duplicate_transcript_keys(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             tmp_root = Path(tmp_dir)

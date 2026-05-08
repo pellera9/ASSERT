@@ -264,7 +264,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, str]:
     cfg = resolve_stage_paths(
         {
             "transcripts_path": raw_cfg.get("transcripts_path") or str(Path(ctx["run_root"]) / TRANSCRIPTS_FILE),
-            "policy_path": raw_cfg.get("policy_path") or str(Path(ctx["suite_root"]) / "policy.json"),
+            "policy_path": raw_cfg.get("policy_path") or ctx.get("policy_path") or str(Path(ctx["suite_root"]) / "policy.json"),
             "save_dir": raw_cfg.get("save_dir") or str(ctx["run_root"]),
         },
         cfg_path=ctx["config_path"],

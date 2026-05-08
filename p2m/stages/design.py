@@ -385,8 +385,8 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
     suite_root = Path(ctx["suite_root"])
     cfg = resolve_stage_paths(
         {
-            "policy_path": raw_cfg.get("policy_path") or str(suite_root / "policy.json"),
-            "save_dir": raw_cfg.get("save_dir") or str(suite_root),
+            "policy_path": raw_cfg.get("policy_path") or ctx.get("policy_path") or str(suite_root / "policy.json"),
+            "save_dir": raw_cfg.get("save_dir") or ctx.get("design_artifact_dir") or str(suite_root),
         },
         cfg_path=ctx["config_path"],
         artifacts_root=ctx["artifacts_root"],
