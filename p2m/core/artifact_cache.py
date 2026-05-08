@@ -698,10 +698,14 @@ def _relative_to_suite(path: Path, suite_root: Path) -> str:
     try:
         return path.resolve().relative_to(suite_root.resolve()).as_posix()
     except ValueError:
-        # Path lives outside suite_root (e.g. different drive on Windows).
-        # os.path.relpath returns native separators; force POSIX so manifests
-        # and sidecars are uniform regardless of host OS.
-        return Path(os.path.relpath(path, suite_root)).as_posix()
+        # Path lives outside suite_root. Prefer a relative path when possible,
+        # but on Windows os.path.relpath raises ValueError for different drives.
+        # Fall back to a resolved absolute POSIX path so manifest/sidecar
+        # generation remains robust across platforms.
+        try:
+            return Path(os.path.relpath(path, suite_root)).as_posix()
+        except ValueError:
+            return path.resolve().as_posix()
 
 
 def _output_paths(stage_name: str, artifact_dir: Path) -> dict[str, Path]:
