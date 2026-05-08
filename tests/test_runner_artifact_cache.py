@@ -395,7 +395,8 @@ class RunnerArtifactCacheTest(unittest.TestCase):
         allocates ``vNNNN/`` (and the stage may have written partial outputs)
         but before ``finalize_artifact_plan`` writes the sidecar, the runner
         must remove the abandoned version directory so it does not leak on
-        disk and ``_next_version`` does not increment past empty slots.
+        disk and ``_allocate_version_dir`` does not increment past empty
+        slots.
         """
 
         modules = self._modules([])
@@ -430,8 +431,8 @@ class RunnerArtifactCacheTest(unittest.TestCase):
             # The abandoned v0001 directory must have been removed.
             self.assertFalse((design_root / "v0001").exists())
 
-            # And on a follow-up run, _next_version should reuse v0001
-            # rather than incrementing past the cleaned-up slot.
+            # And on a follow-up run, _allocate_version_dir should reuse
+            # v0001 rather than incrementing past the cleaned-up slot.
             seen: list[str] = []
             modules2 = self._modules(seen)
             with (

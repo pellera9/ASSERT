@@ -52,6 +52,13 @@ ARTIFACTS_DIR = "artifacts"
 ARTIFACT_METADATA_FILE = "artifact.json"
 LATEST_FILE = "latest.json"
 
+# Bound on the version-allocation retry loop. Each retry rescans the stage
+# directory, so the only legitimate reason to exhaust this budget is a
+# pathologically high concurrent allocation rate (hundreds of `p2m run`
+# invocations against the same suite hitting the same window). At that point
+# we'd rather raise loudly than silently misnumber.
+_MAX_VERSION_ALLOCATION_RETRIES = 100
+
 _OUTPUT_FILES: dict[str, dict[str, str]] = {
     "policy": {
         "policy": "policy.json",
@@ -167,8 +174,7 @@ def prepare_artifact_plan(
                 metadata=metadata,
             )
 
-    version = _next_version(stage_root)
-    artifact_dir = stage_root / version
+    version, artifact_dir = _allocate_version_dir(stage_root)
     return ArtifactPlan(
         stage_name=stage_name,
         version=version,
@@ -396,8 +402,8 @@ def discard_artifact_plan(ctx: dict[str, Any], plan: ArtifactPlan) -> None:
     stage's entry from ``ctx['artifact_versions']`` so that:
 
     * no dead ``vNNNN/`` directory accumulates between failures (otherwise
-      ``_next_version`` keeps incrementing past abandoned slots and the
-      stage_root fills with empty/incomplete version dirs over time), and
+      ``_allocate_version_dir`` keeps incrementing past abandoned slots and
+      the stage_root fills with empty/incomplete version dirs over time), and
     * the failed run's manifest does not record an ``artifact_versions``
       reference pointing at a directory we just deleted.
 
@@ -407,6 +413,12 @@ def discard_artifact_plan(ctx: dict[str, Any], plan: ArtifactPlan) -> None:
     alone — ``finalize_artifact_plan`` is the only writer for non-reused
     plans, so a non-reused plan that reaches ``discard_artifact_plan`` never
     updated ``latest.json`` in the first place.
+
+    With atomic allocation in ``_allocate_version_dir``, ``plan.artifact_dir``
+    for a non-reused plan is always uniquely owned by this process: the slot
+    was reserved by ``mkdir(exist_ok=False)`` in ``prepare_artifact_plan``.
+    ``rmtree`` here therefore only removes content this process produced,
+    even when other ``p2m run`` invocations are racing on the same suite.
     """
 
     if plan.reused:
@@ -435,12 +447,107 @@ def refresh_compatibility_files(
     stage_name: str,
     output_paths: dict[str, Path],
 ) -> None:
-    """Copy selected version outputs back to legacy suite-root filenames."""
+    """Copy selected version outputs back to legacy suite-root filenames.
+
+    Hand-edited suite-root copies are preserved. If a destination file exists
+    and its contents differ from the source AND don't match any previously
+    cached version's recorded hash for the same filename, treat it as a local
+    edit, log a warning, and leave the destination alone.
+
+    The "matches a previously cached version" check is what keeps
+    ``--force-stage <stage>`` working transparently: when the user re-runs to
+    produce a fresh ``vNNNN``, the suite-root copy still holds the prior
+    version's content (because the user did not edit it), so it matches that
+    older version's ``file_hashes`` and we overwrite it with the new content
+    rather than warn-and-skip.
+
+    Users who want to re-sync a hand-edited file from cache can delete the
+    suite-root copy: the next refresh will fall through to the unconditional
+    copy branch.
+    """
 
     suite_root = Path(ctx["suite_root"])
     for path in output_paths.values():
-        if path.exists():
-            shutil.copy2(path, suite_root / path.name)
+        if not path.exists():
+            continue
+        dest = suite_root / path.name
+        if _is_local_edit(suite_root, stage_name, dest, path):
+            log.warning(
+                "[%s] Preserving local edits to %s: contents differ from the "
+                "cached artifact at %s and do not match any previously cached "
+                "version's recorded hash. Delete %s (and optionally re-run "
+                "with --force-stage %s) to re-sync from cache.",
+                stage_name,
+                dest,
+                path,
+                dest,
+                stage_name,
+            )
+            continue
+        shutil.copy2(path, dest)
+
+
+def _is_local_edit(
+    suite_root: Path,
+    stage_name: str,
+    dest: Path,
+    source: Path,
+) -> bool:
+    """Return True when ``dest`` looks like a hand-edit we must not overwrite.
+
+    Conservative by design: any of (a) destination missing, (b) destination
+    not a regular file, (c) destination hash matches the source hash, or
+    (d) destination hash matches some prior cached version's recorded hash
+    for ``dest.name`` returns False (safe to copy). Only when all four checks
+    fail do we conclude the user has hand-edited the suite-root file.
+    """
+
+    if not dest.exists() or not dest.is_file():
+        return False
+    try:
+        dest_hash = file_sha256(dest)
+        source_hash = file_sha256(source)
+    except OSError:
+        # If we can't read either side, fall through to the unconditional
+        # copy attempt — preserves prior behavior on filesystem errors.
+        return False
+    if dest_hash == source_hash:
+        return False
+    return not _was_cached_artifact(suite_root, stage_name, dest.name, dest_hash)
+
+
+def _was_cached_artifact(
+    suite_root: Path,
+    stage_name: str,
+    filename: str,
+    candidate_hash: str,
+) -> bool:
+    """Return True when ``candidate_hash`` matches any cached version's
+    recorded hash for ``filename`` under ``stage_name``.
+
+    Walks every ``vNNNN/artifact.json`` sidecar for the stage and compares
+    against ``file_hashes`` entries whose ``files`` mapping points at
+    ``filename``. Used by ``_is_local_edit`` to distinguish "the suite-root
+    copy was produced by a prior cached version" (safe to overwrite) from
+    "the user hand-edited the suite-root copy" (preserve and warn).
+    """
+
+    stage_root = suite_root / ARTIFACTS_DIR / stage_name
+    for version_dir in _iter_version_dirs(stage_root):
+        metadata = _load_json_object(version_dir / ARTIFACT_METADATA_FILE)
+        if not isinstance(metadata, dict):
+            continue
+        files_map = metadata.get("files")
+        file_hashes = metadata.get("file_hashes")
+        if not isinstance(files_map, dict) or not isinstance(file_hashes, dict):
+            continue
+        for output_key, mapped_name in files_map.items():
+            if mapped_name != filename:
+                continue
+            recorded = file_hashes.get(output_key)
+            if isinstance(recorded, str) and recorded == candidate_hash:
+                return True
+    return False
 
 
 def update_latest(ctx: dict[str, Any], stage_name: str, ref: dict[str, Any]) -> None:
@@ -743,13 +850,53 @@ def _metadata_outputs_exist(
     return True
 
 
-def _next_version(stage_root: Path) -> str:
-    numbers = []
-    for version_dir in _iter_version_dirs(stage_root):
-        match = re.fullmatch(r"v(\d{4})", version_dir.name)
-        if match:
-            numbers.append(int(match.group(1)))
-    return f"v{(max(numbers) + 1) if numbers else 1:04d}"
+def _allocate_version_dir(stage_root: Path) -> tuple[str, Path]:
+    """Atomically reserve the next ``vNNNN`` directory under ``stage_root``.
+
+    Computes the next version number from the existing directory listing,
+    then attempts ``mkdir(exist_ok=False)`` for the candidate path. If a
+    concurrent ``p2m run`` allocated the same number first (FileExistsError),
+    we re-scan and retry with the new max. This closes the
+    time-of-check/time-of-use window between the directory scan and the
+    eventual on-disk write that previously allowed two concurrent pipelines
+    on the same suite to both pick ``vNNNN`` and silently corrupt each
+    other's outputs.
+
+    Note: this only protects allocation. ``update_latest`` still does a
+    read-modify-write on ``latest.json`` without a lock, and
+    ``refresh_compatibility_files`` is last-writer-wins on the suite-root
+    copies. For fully concurrent pipelines on the same suite, prefer running
+    each in its own suite directory; this allocator is defense in depth so
+    that interleaved runs at least keep their own version directories
+    internally consistent.
+    """
+
+    stage_root.mkdir(parents=True, exist_ok=True)
+    last_error: Exception | None = None
+    for _ in range(_MAX_VERSION_ALLOCATION_RETRIES):
+        numbers: list[int] = []
+        for version_dir in _iter_version_dirs(stage_root):
+            match = re.fullmatch(r"v(\d{4})", version_dir.name)
+            if match:
+                numbers.append(int(match.group(1)))
+        candidate_number = (max(numbers) + 1) if numbers else 1
+        version = f"v{candidate_number:04d}"
+        artifact_dir = stage_root / version
+        try:
+            artifact_dir.mkdir(parents=False, exist_ok=False)
+        except FileExistsError as exc:
+            # Either a concurrent allocator beat us to this slot, or a leftover
+            # empty directory exists from a crashed run that was never cleaned
+            # up. Either way, rescan and pick the next number.
+            last_error = exc
+            continue
+        return version, artifact_dir
+    raise RuntimeError(
+        f"could not allocate a fresh version directory under {stage_root} "
+        f"after {_MAX_VERSION_ALLOCATION_RETRIES} retries; another process may "
+        f"be rapidly allocating versions in the same suite (last error: "
+        f"{last_error!r})"
+    )
 
 
 def _iter_version_dirs(stage_root: Path) -> list[Path]:

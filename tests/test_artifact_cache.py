@@ -1,7 +1,9 @@
 import logging
+import shutil
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from p2m.core.artifact_cache import (
     activate_artifact_plan,
@@ -12,10 +14,14 @@ from p2m.core.artifact_cache import (
     hash_payload,
     override_cacheable_output_paths,
     prepare_artifact_plan,
+    refresh_compatibility_files,
+    _allocate_version_dir,
+    _iter_version_dirs,
     _load_json_object,
     _relative_to_suite,
     _resolve_ref_path,
 )
+from p2m.core.io import write_json
 
 
 class ArtifactCacheTest(unittest.TestCase):
@@ -484,8 +490,8 @@ class DiscardArtifactPlanTest(unittest.TestCase):
     Regression for Jake's review (round 5): a stage that fails after
     ``prepare_artifact_plan`` allocates ``vNNNN/`` but before
     ``finalize_artifact_plan`` writes the sidecar must not leave a dead
-    version directory on disk. Otherwise ``_next_version`` keeps incrementing
-    past abandoned slots and the stage_root accumulates leaks.
+    version directory on disk. Otherwise ``_allocate_version_dir`` keeps
+    incrementing past abandoned slots and the stage_root accumulates leaks.
     """
 
     def _ctx(self, root: Path) -> dict:
@@ -529,6 +535,14 @@ class DiscardArtifactPlanTest(unittest.TestCase):
             self.assertNotIn("policy", ctx.get("artifact_versions", {}))
 
     def test_discard_handles_missing_directory_silently(self) -> None:
+        """A sibling cleanup or external rmtree between prepare and discard
+        must not raise — discard is a best-effort safety net.
+
+        With atomic allocation, ``prepare_artifact_plan`` always reserves
+        ``vNNNN/`` on disk, so to exercise the missing-directory branch we
+        explicitly remove it before calling ``discard_artifact_plan``.
+        """
+
         with TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             ctx = self._ctx(root)
@@ -541,7 +555,10 @@ class DiscardArtifactPlanTest(unittest.TestCase):
             )
             activate_artifact_plan(ctx, plan)
 
+            self.assertTrue(plan.artifact_dir.exists())
+            shutil.rmtree(plan.artifact_dir)
             self.assertFalse(plan.artifact_dir.exists())
+
             discard_artifact_plan(ctx, plan)
             self.assertNotIn("policy", ctx.get("artifact_versions", {}))
 
@@ -589,7 +606,13 @@ class DiscardArtifactPlanTest(unittest.TestCase):
 
     def test_next_version_does_not_leak_after_discard(self) -> None:
         """After discard the slot is freed: the next prepare allocates the
-        same vNNNN number rather than incrementing past the abandoned one."""
+        same vNNNN number rather than incrementing past the abandoned one.
+
+        With atomic allocation, ``prepare_artifact_plan`` reserves the
+        directory via ``mkdir(exist_ok=False)``; ``discard_artifact_plan``
+        ``rmtree``s it; the next ``_allocate_version_dir`` rescan sees no
+        ``vNNNN`` and reissues ``v0001``.
+        """
 
         with TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -618,6 +641,332 @@ class DiscardArtifactPlanTest(unittest.TestCase):
                 forced=False,
             )
             self.assertEqual(retry_plan.version, "v0001")
+
+
+class AllocateVersionDirTest(unittest.TestCase):
+    """Atomic ``vNNNN`` reservation under simulated concurrency.
+
+    Regression for the race in ``_next_version``: two ``p2m run``
+    invocations on the same suite both read ``max(numbers) + 1``, both
+    pick the same slot, and silently corrupt each other's outputs.
+    ``_allocate_version_dir`` closes the time-of-check/time-of-use window
+    by reserving via ``mkdir(exist_ok=False)`` with a retry loop.
+    """
+
+    def test_allocates_v0001_on_empty_stage_root(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            stage_root = Path(tmp_dir) / "policy"
+            version, artifact_dir = _allocate_version_dir(stage_root)
+            self.assertEqual(version, "v0001")
+            self.assertEqual(artifact_dir, stage_root / "v0001")
+            self.assertTrue(artifact_dir.exists())
+
+    def test_allocates_after_existing_versions(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            stage_root = Path(tmp_dir) / "policy"
+            stage_root.mkdir(parents=True)
+            (stage_root / "v0001").mkdir()
+            (stage_root / "v0002").mkdir()
+
+            version, artifact_dir = _allocate_version_dir(stage_root)
+            self.assertEqual(version, "v0003")
+            self.assertTrue(artifact_dir.exists())
+
+    def test_retries_when_candidate_dir_exists(self) -> None:
+        """A concurrent process pre-creates ``v0001`` between our scan and
+        our mkdir: the loop must rescan and pick ``v0002`` rather than fail
+        or silently reuse the contended slot."""
+
+        from p2m.core import artifact_cache
+
+        with TemporaryDirectory() as tmp_dir:
+            stage_root = Path(tmp_dir) / "policy"
+            stage_root.mkdir(parents=True)
+
+            scan_calls = {"n": 0}
+            real_iter = artifact_cache._iter_version_dirs
+
+            def staged_iter(path: Path) -> list[Path]:
+                scan_calls["n"] += 1
+                if scan_calls["n"] == 1:
+                    # First scan: report empty. Then race: a sibling pipeline
+                    # creates v0001 before our mkdir runs, so our atomic
+                    # mkdir(exist_ok=False) must raise FileExistsError and
+                    # the loop must retry.
+                    (path / "v0001").mkdir()
+                    return []
+                return real_iter(path)
+
+            with mock.patch.object(
+                artifact_cache, "_iter_version_dirs", side_effect=staged_iter
+            ):
+                version, artifact_dir = _allocate_version_dir(stage_root)
+
+            self.assertEqual(version, "v0002")
+            self.assertEqual(scan_calls["n"], 2)
+            self.assertTrue((stage_root / "v0001").exists())
+            self.assertTrue((stage_root / "v0002").exists())
+
+    def test_raises_after_exhausting_retries(self) -> None:
+        """Pathological: every mkdir fails. We give up loudly rather than
+        loop forever or return a bogus version."""
+
+        from p2m.core import artifact_cache
+
+        with TemporaryDirectory() as tmp_dir:
+            stage_root = Path(tmp_dir) / "policy"
+            stage_root.mkdir(parents=True)
+
+            real_mkdir = Path.mkdir
+
+            def always_collide(self_path, *args, **kwargs):  # type: ignore[no-untyped-def]
+                # Only intercept the version-dir mkdir attempts (which pass
+                # exist_ok=False). Stage-root creation uses exist_ok=True and
+                # must still succeed.
+                if (
+                    self_path.parent == stage_root
+                    and kwargs.get("exist_ok") is False
+                ):
+                    raise FileExistsError(self_path)
+                return real_mkdir(self_path, *args, **kwargs)
+
+            with mock.patch.object(Path, "mkdir", new=always_collide):
+                with self.assertRaises(RuntimeError) as cm:
+                    _allocate_version_dir(stage_root)
+
+            self.assertIn("could not allocate", str(cm.exception))
+
+
+class RefreshCompatibilityFilesTest(unittest.TestCase):
+    """Suite-root copies must preserve user edits.
+
+    ``refresh_compatibility_files`` runs on every reuse, finalize, and
+    activate-latest path. If a user hand-edits ``<suite>/policy.json``
+    between runs, the next cache hit must not silently destroy those edits.
+    The implementation hashes the destination and only overwrites when
+    either (a) it matches the source, or (b) it matches a previously cached
+    version's recorded hash (which is what makes ``--force-stage`` continue
+    to overwrite cleanly).
+    """
+
+    def _ctx(self, root: Path) -> dict:
+        suite_root = root / "results" / "suite-a"
+        suite_root.mkdir(parents=True, exist_ok=True)
+        return {"suite_root": suite_root}
+
+    def _seed_cached_version(
+        self,
+        suite_root: Path,
+        stage_name: str,
+        version: str,
+        contents: dict[str, tuple[str, str]],
+    ) -> Path:
+        """Create ``vNNNN/`` with given files plus a sidecar recording their
+        hashes. ``contents`` maps output_key -> (filename, payload)."""
+
+        import hashlib
+
+        version_dir = suite_root / "artifacts" / stage_name / version
+        version_dir.mkdir(parents=True, exist_ok=True)
+        files: dict[str, str] = {}
+        file_hashes: dict[str, str] = {}
+        for output_key, (filename, payload) in contents.items():
+            (version_dir / filename).write_text(payload, encoding="utf-8")
+            files[output_key] = filename
+            file_hashes[output_key] = hashlib.sha256(
+                payload.encode("utf-8")
+            ).hexdigest()
+        write_json(
+            version_dir / "artifact.json",
+            {
+                "schema_version": 1,
+                "artifact_type": stage_name,
+                "version": version,
+                "files": files,
+                "file_hashes": file_hashes,
+            },
+        )
+        return version_dir
+
+    def test_copies_when_destination_missing(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ctx = self._ctx(root)
+            suite_root = ctx["suite_root"]
+            version_dir = self._seed_cached_version(
+                suite_root,
+                "policy",
+                "v0001",
+                {"policy": ("policy.json", '{"a":1}')},
+            )
+
+            output_paths = {"policy": version_dir / "policy.json"}
+            refresh_compatibility_files(ctx, "policy", output_paths)
+
+            dest = suite_root / "policy.json"
+            self.assertTrue(dest.exists())
+            self.assertEqual(dest.read_text(encoding="utf-8"), '{"a":1}')
+
+    def test_no_op_when_destination_matches_source(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ctx = self._ctx(root)
+            suite_root = ctx["suite_root"]
+            version_dir = self._seed_cached_version(
+                suite_root,
+                "policy",
+                "v0001",
+                {"policy": ("policy.json", '{"identical":true}')},
+            )
+            (suite_root / "policy.json").write_text(
+                '{"identical":true}', encoding="utf-8"
+            )
+
+            output_paths = {"policy": version_dir / "policy.json"}
+            logger = logging.getLogger("p2m.core.artifact_cache")
+            previous_level = logger.level
+            logger.setLevel(logging.WARNING)
+            try:
+                with self.assertNoLogs(
+                    "p2m.core.artifact_cache", level="WARNING"
+                ):
+                    refresh_compatibility_files(ctx, "policy", output_paths)
+            finally:
+                logger.setLevel(previous_level)
+
+            self.assertEqual(
+                (suite_root / "policy.json").read_text(encoding="utf-8"),
+                '{"identical":true}',
+            )
+
+    def test_preserves_user_edits_and_warns(self) -> None:
+        """Regression for the silent-overwrite footgun: a user who hand-edits
+        ``<suite>/policy.json`` between runs must see their edit preserved
+        and a warning explaining what just happened."""
+
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ctx = self._ctx(root)
+            suite_root = ctx["suite_root"]
+            version_dir = self._seed_cached_version(
+                suite_root,
+                "policy",
+                "v0001",
+                {"policy": ("policy.json", '{"cached":true}')},
+            )
+            user_edit = '{"user":"manually edited this between runs"}'
+            (suite_root / "policy.json").write_text(user_edit, encoding="utf-8")
+
+            output_paths = {"policy": version_dir / "policy.json"}
+            with self.assertLogs(
+                "p2m.core.artifact_cache", level="WARNING"
+            ) as captured:
+                refresh_compatibility_files(ctx, "policy", output_paths)
+
+            # User's edit preserved on disk.
+            self.assertEqual(
+                (suite_root / "policy.json").read_text(encoding="utf-8"),
+                user_edit,
+            )
+            joined = "\n".join(captured.output)
+            self.assertIn("Preserving local edits", joined)
+            self.assertIn("policy.json", joined)
+            self.assertIn("--force-stage", joined)
+
+    def test_overwrites_when_destination_matches_prior_cached_version(
+        self,
+    ) -> None:
+        """``--force-stage policy`` regenerates a fresh ``v0002``. The
+        suite-root copy still holds ``v0001`` content (user did not edit it),
+        so ``refresh_compatibility_files`` must overwrite it with ``v0002``
+        rather than warn-and-skip — the destination matches a cached version,
+        which is the signal that it is cache-derived, not user-authored."""
+
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ctx = self._ctx(root)
+            suite_root = ctx["suite_root"]
+            self._seed_cached_version(
+                suite_root,
+                "policy",
+                "v0001",
+                {"policy": ("policy.json", '{"v":1}')},
+            )
+            v0002 = self._seed_cached_version(
+                suite_root,
+                "policy",
+                "v0002",
+                {"policy": ("policy.json", '{"v":2}')},
+            )
+            # Suite-root copy still holds the v0001 payload byte-for-byte
+            # (no user edit happened between v0001 finalize and v0002).
+            (suite_root / "policy.json").write_text('{"v":1}', encoding="utf-8")
+
+            output_paths = {"policy": v0002 / "policy.json"}
+            logger = logging.getLogger("p2m.core.artifact_cache")
+            previous_level = logger.level
+            logger.setLevel(logging.WARNING)
+            try:
+                with self.assertNoLogs(
+                    "p2m.core.artifact_cache", level="WARNING"
+                ):
+                    refresh_compatibility_files(ctx, "policy", output_paths)
+            finally:
+                logger.setLevel(previous_level)
+
+            self.assertEqual(
+                (suite_root / "policy.json").read_text(encoding="utf-8"),
+                '{"v":2}',
+            )
+
+    def test_per_file_isolation(self) -> None:
+        """Multi-output stages: a hand-edit to one file must not block the
+        refresh of a sibling file in the same stage."""
+
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ctx = self._ctx(root)
+            suite_root = ctx["suite_root"]
+            version_dir = self._seed_cached_version(
+                suite_root,
+                "policy",
+                "v0001",
+                {
+                    "policy": ("policy.json", '{"cached":true}'),
+                    "systematization": (
+                        "systematization.json",
+                        '{"cached":"sys"}',
+                    ),
+                },
+            )
+            # User edits policy.json but leaves systematization.json alone.
+            (suite_root / "policy.json").write_text(
+                '{"user":"edit"}', encoding="utf-8"
+            )
+
+            output_paths = {
+                "policy": version_dir / "policy.json",
+                "systematization": version_dir / "systematization.json",
+            }
+            with self.assertLogs(
+                "p2m.core.artifact_cache", level="WARNING"
+            ) as captured:
+                refresh_compatibility_files(ctx, "policy", output_paths)
+
+            # User edit on policy.json preserved.
+            self.assertEqual(
+                (suite_root / "policy.json").read_text(encoding="utf-8"),
+                '{"user":"edit"}',
+            )
+            # systematization.json was missing → copied unconditionally.
+            self.assertEqual(
+                (suite_root / "systematization.json").read_text(encoding="utf-8"),
+                '{"cached":"sys"}',
+            )
+            # Exactly one warning, scoped to policy.json.
+            joined = "\n".join(captured.output)
+            self.assertIn("policy.json", joined)
+            self.assertNotIn("systematization.json", joined)
 
 
 if __name__ == "__main__":
