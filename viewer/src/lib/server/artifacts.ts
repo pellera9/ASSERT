@@ -198,9 +198,10 @@ function manifestArtifactPath(suiteDir: string, rawPath: unknown): string | null
 
 function runSeedArtifactPath(suiteDir: string, manifest: Manifest | null): string {
 	const seedArtifact = manifest?.artifact_versions?.seeds;
-	const relativePath = manifestArtifactPath(suiteDir, seedArtifact?.relative_path);
-	if (relativePath) return relativePath;
-	const artifactPath = manifestArtifactPath(suiteDir, seedArtifact?.path);
+	const artifactPath = manifestArtifactPath(
+		suiteDir,
+		seedArtifact?.path ?? seedArtifact?.relative_path
+	);
 	if (artifactPath) return artifactPath;
 	return path.join(suiteDir, SUITE_SEEDS_FILE);
 }
@@ -211,7 +212,7 @@ function runSeedRows(
 	seedRows: UnifiedSeedRow[] | undefined
 ): UnifiedSeedRow[] {
 	const seedArtifact = manifest?.artifact_versions?.seeds;
-	if (seedArtifact?.relative_path || seedArtifact?.path) {
+	if (seedArtifact?.path || seedArtifact?.relative_path) {
 		return readJsonlFile<UnifiedSeedRow>(runSeedArtifactPath(suiteDir, manifest), { missingOk: true });
 	}
 	return seedRows ?? readJsonlFile<UnifiedSeedRow>(path.join(suiteDir, SUITE_SEEDS_FILE), { missingOk: true });

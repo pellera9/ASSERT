@@ -401,35 +401,33 @@ def run_pipeline(
 
         module = STAGES[stage_name]
 
-        if cache_supported and module.SCOPE == "suite" and is_cacheable_stage(stage_name):
-            forced = stage_name in requested_force_stages
-            plan = prepare_artifact_plan(
-                ctx=ctx,
-                stage_name=stage_name,
-                raw_cfg=raw_cfg,
-                forced=forced,
-            )
-            ref = activate_artifact_plan(ctx, plan)
-            artifact_plans[stage_name] = plan
-            if plan.reused:
-                refresh_compatibility_files(ctx, stage_name, plan.output_paths)
-                update_latest(ctx, stage_name, ref)
-                _progress(
-                    f"  Skipping {stage_name} (reusing {stage_name} artifact "
-                    f"{plan.version}; input hashes match, use --force-stage {stage_name} to regenerate)"
+        if module.SCOPE == "suite":
+            if cache_supported and is_cacheable_stage(stage_name):
+                forced = stage_name in requested_force_stages
+                plan = prepare_artifact_plan(
+                    ctx=ctx,
+                    stage_name=stage_name,
+                    raw_cfg=raw_cfg,
+                    forced=forced,
                 )
-                continue
-
-        if (
-            not (cache_supported and module.SCOPE == "suite" and is_cacheable_stage(stage_name))
-            and module.SCOPE == "suite"
-            and module.SUITE_OUTPUT
-            and stage_name not in requested_force_stages
-        ):
-            output_path = Path(ctx["suite_root"]) / module.SUITE_OUTPUT
-            if output_path.exists():
-                _progress(f"  Skipping {stage_name} (output already exists, use --force-stage {stage_name} to regenerate)")
-                continue
+                ref = activate_artifact_plan(ctx, plan)
+                artifact_plans[stage_name] = plan
+                if plan.reused:
+                    refresh_compatibility_files(ctx, stage_name, plan.output_paths)
+                    update_latest(ctx, stage_name, ref)
+                    _progress(
+                        f"  Skipping {stage_name} (reusing {stage_name} artifact "
+                        f"{plan.version}; input hashes match, use --force-stage {stage_name} to regenerate)"
+                    )
+                    continue
+            elif (
+                module.SUITE_OUTPUT
+                and stage_name not in requested_force_stages
+            ):
+                output_path = Path(ctx["suite_root"]) / module.SUITE_OUTPUT
+                if output_path.exists():
+                    _progress(f"  Skipping {stage_name} (output already exists, use --force-stage {stage_name} to regenerate)")
+                    continue
 
         stages_to_run.append((stage_name, module, raw_cfg))
 

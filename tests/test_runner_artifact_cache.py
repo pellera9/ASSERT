@@ -203,6 +203,62 @@ class RunnerArtifactCacheTest(unittest.TestCase):
             self.assertFalse((root / "results" / "suite-a" / "artifacts" / "design" / "v0002").exists())
             self.assertTrue((root / "results" / "suite-a" / "artifacts" / "seeds" / "v0002" / "seeds.jsonl").exists())
 
+    def test_force_stage_policy_cascades_through_design_and_seeds(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            seen: list[str] = []
+            codes = self._run_with_contexts(
+                [self._ctx(root), self._ctx(root)],
+                seen,
+                force_stages=[None, ["policy"]],
+            )
+
+            self.assertEqual(codes, [0, 0])
+            self.assertEqual(
+                seen,
+                ["policy", "design", "seeds", "policy", "design", "seeds"],
+            )
+            for stage in ("policy", "design", "seeds"):
+                self.assertTrue(
+                    (root / "results" / "suite-a" / "artifacts" / stage / "v0002").exists(),
+                    msg=f"expected v0002 of {stage}",
+                )
+
+    def test_force_stage_design_cascades_to_seeds_only(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            seen: list[str] = []
+            codes = self._run_with_contexts(
+                [self._ctx(root), self._ctx(root)],
+                seen,
+                force_stages=[None, ["design"]],
+            )
+
+            self.assertEqual(codes, [0, 0])
+            self.assertEqual(seen, ["policy", "design", "seeds", "design", "seeds"])
+            self.assertFalse((root / "results" / "suite-a" / "artifacts" / "policy" / "v0002").exists())
+            self.assertTrue((root / "results" / "suite-a" / "artifacts" / "design" / "v0002").exists())
+            self.assertTrue((root / "results" / "suite-a" / "artifacts" / "seeds" / "v0002").exists())
+
+    def test_reuse_path_restores_legacy_compatibility_files(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            seen: list[str] = []
+            codes_a = self._run_with_contexts([self._ctx(root)], seen)
+            self.assertEqual(codes_a, [0])
+
+            suite_root = root / "results" / "suite-a"
+            for filename in ("policy.json", "design.json", "seeds.jsonl"):
+                (suite_root / filename).unlink(missing_ok=True)
+
+            codes_b = self._run_with_contexts([self._ctx(root)], seen)
+            self.assertEqual(codes_b, [0])
+            for filename in ("policy.json", "design.json", "seeds.jsonl"):
+                self.assertTrue(
+                    (suite_root / filename).exists(),
+                    msg=f"reuse path failed to restore legacy {filename}",
+                )
+
     def test_rollout_records_seed_artifact_version_and_runs_per_run(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -222,9 +278,11 @@ class RunnerArtifactCacheTest(unittest.TestCase):
             )
             self.assertEqual(manifest["artifact_versions"]["seeds"]["version"], "v0001")
             self.assertEqual(
-                Path(manifest["artifact_versions"]["seeds"]["relative_path"]),
+                Path(manifest["artifact_versions"]["seeds"]["path"]),
                 Path("artifacts") / "seeds" / "v0001" / "seeds.jsonl",
             )
+            self.assertNotIn("relative_path", manifest["artifact_versions"]["seeds"])
+            self.assertNotIn("relative_metadata_path", manifest["artifact_versions"]["seeds"])
 
     def test_rollout_only_config_uses_latest_seed_artifact_version(self) -> None:
         with TemporaryDirectory() as tmp_dir:

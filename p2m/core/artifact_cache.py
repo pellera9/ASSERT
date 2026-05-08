@@ -1,4 +1,30 @@
-"""Artifact-level cache and version helpers for suite-scoped outputs."""
+"""Artifact-level cache and version helpers for suite-scoped outputs.
+
+Cacheable upstream stages (``policy``, ``design``, ``seeds``) write their
+outputs into versioned directories under ``<suite>/artifacts/<stage>/v0001``,
+``v0002``, ... Each version directory holds its data files alongside a
+``artifact.json`` sidecar with a stable input hash. A ``<suite>/latest.json``
+pointer records the most recently selected version per stage so that
+run-only configs (rollout/judge) can pick up the right inputs without
+regenerating upstream artifacts.
+
+Reuse contract:
+
+* On each suite run, ``prepare_artifact_plan`` re-derives an ``input_hash``
+  from the relevant inputs (concept text, stage config, upstream artifact
+  refs, prompt template files, target config for seeds). If a prior version
+  has the same hash and complete outputs, that version is reused; otherwise
+  the next ``v####`` directory is allocated.
+* ``finalize_artifact_plan`` writes the sidecar, refreshes ``latest.json``,
+  and copies primary outputs back to the suite root for legacy readers.
+* Run-scoped stages (rollout, judge) consume the activated ref via
+  ``ctx["artifact_versions"]`` and never get their own version directory;
+  they simply record which seed artifact version they ran against.
+
+Artifact references emitted into manifests/sidecars are always
+POSIX-formatted relative-to-suite paths so they read cleanly on every
+platform.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +34,7 @@ import json
 import os
 import re
 import shutil
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -162,7 +189,14 @@ def activate_artifact_plan(ctx: dict[str, Any], plan: ArtifactPlan) -> dict[str,
 
 
 def activate_latest_artifacts(ctx: dict[str, Any]) -> None:
-    """Load latest artifact refs into context for run-only stage configs."""
+    """Load latest artifact refs into context for run-only stage configs.
+
+    When ``latest.json`` references an artifact directory that has been
+    deleted, has lost its sidecar, or is missing one of its data files, we
+    emit a stderr warning and try to fall back to the most recent valid
+    version directory for that stage (if any). A silent skip would let the
+    pipeline silently drift to stale legacy compatibility files.
+    """
 
     suite_root = Path(ctx["suite_root"])
     latest = _load_json_object(suite_root / LATEST_FILE)
@@ -177,7 +211,8 @@ def activate_latest_artifacts(ctx: dict[str, Any]) -> None:
         version = ref.get("version")
         if not isinstance(version, str) or not version:
             continue
-        fallback_artifact_dir = suite_root / ARTIFACTS_DIR / stage_name / version
+        stage_root = suite_root / ARTIFACTS_DIR / stage_name
+        fallback_artifact_dir = stage_root / version
         artifact_dir = _resolve_ref_path(suite_root, ref.get("artifact_dir"))
         if artifact_dir is None or not artifact_dir.exists():
             artifact_dir = fallback_artifact_dir
@@ -188,15 +223,51 @@ def activate_latest_artifacts(ctx: dict[str, Any]) -> None:
         if metadata_path is None or not metadata_path.exists():
             metadata_path = artifact_dir / ARTIFACT_METADATA_FILE
         metadata = _load_json_object(metadata_path)
-        if not metadata or not _metadata_outputs_exist(artifact_dir, metadata):
+        if metadata and _metadata_outputs_exist(artifact_dir, metadata):
+            output_paths = _metadata_output_paths(stage_name, artifact_dir, metadata)
+            ctx.setdefault("artifact_versions", {})[stage_name] = ref
+            ctx[_CONTEXT_DIR_KEYS[stage_name]] = str(artifact_dir)
+            for output_key, context_key in _CONTEXT_PATH_KEYS[stage_name].items():
+                if output_key in output_paths:
+                    ctx[context_key] = str(output_paths[output_key])
+            refresh_compatibility_files(ctx, stage_name, output_paths)
             continue
-        output_paths = _metadata_output_paths(stage_name, artifact_dir, metadata)
-        ctx.setdefault("artifact_versions", {})[stage_name] = ref
-        ctx[_CONTEXT_DIR_KEYS[stage_name]] = str(artifact_dir)
+
+        recovery = _recover_latest_valid_version(stage_root)
+        if recovery is None:
+            print(
+                f"[artifact-cache] warning: latest.json references missing or "
+                f"incomplete {stage_name} artifact {version}; no valid prior "
+                f"version was found.",
+                file=sys.stderr,
+            )
+            continue
+        recovered_version, recovered_dir, recovered_metadata = recovery
+        recovered_outputs = _metadata_output_paths(
+            stage_name, recovered_dir, recovered_metadata
+        )
+        recovered_ref = _ref_from_metadata(
+            ctx,
+            stage_name=stage_name,
+            version=recovered_version,
+            artifact_dir=recovered_dir,
+            metadata=recovered_metadata,
+            primary_path=recovered_outputs[
+                next(iter(_OUTPUT_FILES[stage_name]))
+            ],
+        )
+        ctx.setdefault("artifact_versions", {})[stage_name] = recovered_ref
+        ctx[_CONTEXT_DIR_KEYS[stage_name]] = str(recovered_dir)
         for output_key, context_key in _CONTEXT_PATH_KEYS[stage_name].items():
-            if output_key in output_paths:
-                ctx[context_key] = str(output_paths[output_key])
-        refresh_compatibility_files(ctx, stage_name, output_paths)
+            if output_key in recovered_outputs:
+                ctx[context_key] = str(recovered_outputs[output_key])
+        refresh_compatibility_files(ctx, stage_name, recovered_outputs)
+        update_latest(ctx, stage_name, recovered_ref)
+        print(
+            f"[artifact-cache] warning: latest.json {stage_name} entry was "
+            f"missing or incomplete; recovered to version {recovered_version}.",
+            file=sys.stderr,
+        )
 
 
 def finalize_artifact_plan(ctx: dict[str, Any], plan: ArtifactPlan) -> dict[str, Any]:
@@ -204,16 +275,18 @@ def finalize_artifact_plan(ctx: dict[str, Any], plan: ArtifactPlan) -> dict[str,
 
     plan.artifact_dir.mkdir(parents=True, exist_ok=True)
     file_hashes = _file_hashes(plan.output_paths)
+    hashes: dict[str, Any] = {
+        "config_hash": plan.fingerprint.config_hash,
+        "input_hash": plan.fingerprint.input_hash,
+    }
+    if plan.fingerprint.concept_hash is not None:
+        hashes["concept_hash"] = plan.fingerprint.concept_hash
     metadata = {
         "schema_version": 1,
         "artifact_type": plan.stage_name,
         "version": plan.version,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "hashes": {
-            "concept_hash": plan.fingerprint.concept_hash,
-            "config_hash": plan.fingerprint.config_hash,
-            "input_hash": plan.fingerprint.input_hash,
-        },
+        "hashes": hashes,
         "inputs": plan.fingerprint.descriptor,
         "files": {
             key: path.name for key, path in plan.output_paths.items()
@@ -270,19 +343,51 @@ def artifact_ref(
     relative_metadata_path = _relative_to_suite(sidecar_path, suite_root)
     hashes = metadata.get("hashes", {}) if isinstance(metadata, dict) else {}
     file_hashes = metadata.get("file_hashes", {}) if isinstance(metadata, dict) else {}
-    return {
+    ref: dict[str, Any] = {
         "artifact_type": plan.stage_name,
         "version": plan.version,
         "input_hash": hashes.get("input_hash", plan.fingerprint.input_hash),
         "config_hash": hashes.get("config_hash", plan.fingerprint.config_hash),
-        "concept_hash": hashes.get("concept_hash", plan.fingerprint.concept_hash),
         "path": relative_path,
-        "relative_path": relative_path,
         "artifact_dir": relative_artifact_dir,
         "metadata_path": relative_metadata_path,
-        "relative_metadata_path": relative_metadata_path,
         "file_hashes": file_hashes,
     }
+    concept_hash = hashes.get("concept_hash", plan.fingerprint.concept_hash)
+    if concept_hash is not None:
+        ref["concept_hash"] = concept_hash
+    return ref
+
+
+def _ref_from_metadata(
+    ctx: dict[str, Any],
+    *,
+    stage_name: str,
+    version: str,
+    artifact_dir: Path,
+    metadata: dict[str, Any],
+    primary_path: Path,
+) -> dict[str, Any]:
+    """Build a ref payload from on-disk metadata (no plan/fingerprint needed)."""
+
+    suite_root = Path(ctx["suite_root"])
+    sidecar_path = artifact_dir / ARTIFACT_METADATA_FILE
+    hashes = metadata.get("hashes", {}) if isinstance(metadata, dict) else {}
+    file_hashes = metadata.get("file_hashes", {}) if isinstance(metadata, dict) else {}
+    ref: dict[str, Any] = {
+        "artifact_type": stage_name,
+        "version": version,
+        "input_hash": hashes.get("input_hash"),
+        "config_hash": hashes.get("config_hash"),
+        "path": _relative_to_suite(primary_path, suite_root),
+        "artifact_dir": _relative_to_suite(artifact_dir, suite_root),
+        "metadata_path": _relative_to_suite(sidecar_path, suite_root),
+        "file_hashes": file_hashes,
+    }
+    concept_hash = hashes.get("concept_hash")
+    if concept_hash is not None:
+        ref["concept_hash"] = concept_hash
+    return ref
 
 
 def build_artifact_fingerprint(
@@ -387,7 +492,7 @@ def _artifact_or_file_dependency(
             "artifact_type": ref.get("artifact_type", artifact_type),
             "version": ref.get("version"),
             "input_hash": ref.get("input_hash"),
-            "path": ref.get("relative_path") or ref.get("path"),
+            "path": ref.get("path") or ref.get("relative_path"),
         }
     raw_path = ctx.get(context_path_key)
     if not raw_path and ctx.get("suite_root"):
@@ -451,6 +556,18 @@ def _latest_matching_metadata(stage_root: Path, input_hash: str) -> tuple[str, d
     return matches[-1] if matches else None
 
 
+def _recover_latest_valid_version(
+    stage_root: Path,
+) -> tuple[str, Path, dict[str, Any]] | None:
+    """Return the most recent intact version dir for a stage, if any."""
+
+    for version_dir in reversed(_iter_version_dirs(stage_root)):
+        metadata = _load_json_object(version_dir / ARTIFACT_METADATA_FILE)
+        if metadata and _metadata_outputs_exist(version_dir, metadata):
+            return version_dir.name, version_dir, metadata
+    return None
+
+
 def _metadata_outputs_exist(version_dir: Path, metadata: dict[str, Any]) -> bool:
     files = metadata.get("files")
     if not isinstance(files, dict):
@@ -493,7 +610,10 @@ def _relative_to_suite(path: Path, suite_root: Path) -> str:
     try:
         return path.resolve().relative_to(suite_root.resolve()).as_posix()
     except ValueError:
-        return os.path.relpath(path, suite_root)
+        # Path lives outside suite_root (e.g. different drive on Windows).
+        # os.path.relpath returns native separators; force POSIX so manifests
+        # and sidecars are uniform regardless of host OS.
+        return Path(os.path.relpath(path, suite_root)).as_posix()
 
 
 def _output_paths(stage_name: str, artifact_dir: Path) -> dict[str, Path]:

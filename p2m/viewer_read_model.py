@@ -62,10 +62,7 @@ def _seed_artifact_path(suite_dir: Path, manifest: dict[str, Any] | None) -> Pat
     if isinstance(artifacts, dict):
         seeds = artifacts.get("seeds")
         if isinstance(seeds, dict):
-            raw_relative = seeds.get("relative_path")
-            if isinstance(raw_relative, str) and raw_relative:
-                return _manifest_relative_path(suite_dir, raw_relative)
-            raw_path = seeds.get("path")
+            raw_path = seeds.get("path") or seeds.get("relative_path")
             if isinstance(raw_path, str) and raw_path:
                 path = Path(raw_path)
                 if path.is_absolute():

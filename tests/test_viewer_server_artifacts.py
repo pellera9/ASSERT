@@ -211,7 +211,7 @@ class ViewerServerArtifactsTest(unittest.TestCase):
                         "artifact_versions": {
                             "seeds": {
                                 "version": "v0001",
-                                "relative_path": "artifacts\\seeds\\v0001\\seeds.jsonl",
+                                "path": "artifacts/seeds/v0001/seeds.jsonl",
                             }
                         },
                     }
@@ -480,6 +480,58 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertIn("policy_violation", payload["keys"])
             self.assertIn("overrefusal", payload["keys"])
+
+    def test_load_suite_snapshot_excludes_artifacts_cache_directory_from_runs(self) -> None:
+        with TemporaryDirectory(dir=ROOT / "viewer") as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            harness_dir = tmp_root / "harness"
+            harness_dir.mkdir()
+            self._copy_data_harness(harness_dir)
+
+            artifacts_root = tmp_root / "artifacts" / "results"
+            suite_dir = artifacts_root / "suite-a"
+            run_dir = suite_dir / "run-a"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "manifest.json").write_text(
+                json.dumps({"status": "completed"}), encoding="utf-8"
+            )
+            (suite_dir / "suite.json").write_text(
+                json.dumps({"created_at": "2026-04-02T00:00:00Z"}), encoding="utf-8"
+            )
+
+            cache_dir = suite_dir / "artifacts" / "seeds" / "v0001"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            (cache_dir / "seeds.jsonl").write_text("", encoding="utf-8")
+
+            env = os.environ.copy()
+            env.update(
+                {
+                    "ARTIFACTS_ROOT": str(artifacts_root),
+                    "MEASUREMENTS_ROOT": str(tmp_root),
+                }
+            )
+            script = textwrap.dedent(
+                """\
+                try {
+                  const { loadSuiteSnapshot } = await import('./artifacts.ts');
+                  const snapshot = loadSuiteSnapshot('suite-a');
+                  console.log(JSON.stringify({ ok: true, runIds: snapshot?.runIds ?? [] }));
+                } catch (error) {
+                  console.log(JSON.stringify({
+                    ok: false,
+                    name: error.name,
+                    message: error.message
+                  }));
+                }
+                """
+            )
+            result = self._run_node(harness_dir=harness_dir, script=script, env=env)
+
+            self.assertEqual(result.returncode, 0, msg=f"{result.stdout}\n{result.stderr}")
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"], msg=payload)
+            self.assertEqual(sorted(payload["runIds"]), ["run-a"])
+            self.assertNotIn("artifacts", payload["runIds"])
 
     def test_load_run_page_data_reads_live_transcripts_during_rollout(self) -> None:
         with TemporaryDirectory(dir=ROOT / "viewer") as tmp_dir:
