@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import socket
 import sys
 import time
-import traceback
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +45,8 @@ from p2m.core.model_client import (
 from p2m.stages import STAGES
 
 load_dotenv()
+
+log = logging.getLogger(__name__)
 
 
 def _load_context(
@@ -113,27 +115,9 @@ def _record_run_artifacts(manifest: RunManifest, ctx: dict[str, Any], run_root: 
     )
 
 
-def _progress(line: str) -> None:
-    """Write a runner progress line to the original stderr.
-
-    Phoenix/OTel auto-instrumentation can replace sys.stderr with a
-    wrapper that drops message bodies (passing only trailing newlines)
-    after the second target invocation; the wrapper persists across
-    stage boundaries until the next runtime is closed. The runner's
-    progress lines all share this hazard, so we route them through
-    sys.__stderr__ which the interpreter keeps as the unwrapped
-    original. No effect on processes that don't touch sys.stderr.
-    """
-    try:
-        sys.__stderr__.write(line + "\n")
-        sys.__stderr__.flush()
-    except OSError:
-        sys.stderr.write(line + "\n")
-        sys.stderr.flush()
-
-
 def _print_stage_start(stage_name: str, ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> None:
     """Print a human-readable stage header."""
+    tag = f"[{stage_name}]"
     risk = ctx.get("risk") or ctx.get("concept") or ""
     if stage_name == "policy":
         label = risk.replace("\n", " ").strip()
@@ -143,9 +127,9 @@ def _print_stage_start(stage_name: str, ctx: dict[str, Any], raw_cfg: dict[str, 
         if isinstance(raw_cfg.get("model"), dict):
             policy_model = raw_cfg["model"].get("name", "")
         model_suffix = f" ({policy_model})" if policy_model else ""
-        _progress(f'  Generating behavior taxonomy for "{label}"{model_suffix}')
+        log.info(f'{tag} Generating behavior taxonomy for "{label}"{model_suffix}')
     elif stage_name == "systematization":
-        _progress(f"  Refining policy structure...")
+        log.info(f"{tag} Refining policy structure...")
     elif stage_name == "design":
         level_count = raw_cfg.get("level_count")
         factor_count = 0
@@ -161,11 +145,11 @@ def _print_stage_start(stage_name: str, ctx: dict[str, Any], raw_cfg: dict[str, 
             design_model = raw_cfg["model"].get("name", "")
         model_suffix = f" ({design_model})" if design_model else ""
         if level_count and factor_count:
-            _progress(f"  Designing seed-coverage grid: {total_factors} factors x {level_count} levels each{model_suffix}...")
+            log.info(f"{tag} Designing seed-coverage grid: {total_factors} factors x {level_count} levels each{model_suffix}...")
         elif factor_count:
-            _progress(f"  Designing seed-coverage grid: {total_factors} factors{model_suffix}...")
+            log.info(f"{tag} Designing seed-coverage grid: {total_factors} factors{model_suffix}...")
         else:
-            _progress(f"  Designing seed-coverage grid (behavior factor only){model_suffix}...")
+            log.info(f"{tag} Designing seed-coverage grid (behavior factor only){model_suffix}...")
     elif stage_name == "seeds":
         prompt_budget = 0
         scenario_budget = 0
@@ -173,8 +157,6 @@ def _print_stage_start(stage_name: str, ctx: dict[str, Any], raw_cfg: dict[str, 
             prompt_budget = raw_cfg["prompt"].get("budget", 0) or raw_cfg["prompt"].get("sample_size", 0)
         if isinstance(raw_cfg.get("scenario"), dict):
             scenario_budget = raw_cfg["scenario"].get("budget", 0) or raw_cfg["scenario"].get("sample_size", 0)
-        # Read behavior count from the policy output. Fall back to the
-        # legacy `sub_risks` key for any pre-merge artifacts on disk.
         behavior_count = 0
         policy_path = Path(ctx["suite_root"]) / "policy.json"
         if policy_path.exists():
@@ -204,7 +186,7 @@ def _print_stage_start(stage_name: str, ctx: dict[str, Any], raw_cfg: dict[str, 
                 seed_models.add(kind_cfg["model"].get("name", ""))
         seed_models.discard("")
         model_suffix = f" ({', '.join(sorted(seed_models))})" if seed_models else ""
-        _progress(f"  Generating test cases{detail}{model_suffix}...")
+        log.info(f"{tag} Generating test cases{detail}{model_suffix}...")
     elif stage_name == "rollout":
         target = ctx.get("target")
         target_name = ""
@@ -216,16 +198,14 @@ def _print_stage_start(stage_name: str, ctx: dict[str, Any], raw_cfg: dict[str, 
         if isinstance(raw_cfg.get("auditor"), dict) and isinstance(raw_cfg["auditor"].get("model"), dict):
             auditor_name = raw_cfg["auditor"]["model"].get("name", "")
         if auditor_name and target_name:
-            _progress(f"  Running test cases (auditor: {auditor_name} \u2192 target: {target_name})...")
+            log.info(f"{tag} Running test cases (auditor: {auditor_name} \u2192 target: {target_name})...")
         elif target_name:
-            _progress(f"  Running test cases against target ({target_name})...")
+            log.info(f"{tag} Running test cases against target ({target_name})...")
         else:
-            _progress(f"  Running test cases against target...")
+            log.info(f"{tag} Running test cases against target...")
     elif stage_name == "judge":
         eval_cfg = ctx.get("evaluation")
         judge_model_obj = eval_cfg.judge.model if eval_cfg else None
-        # judge.model is a ModelConfig dataclass post-init; reach for .name
-        # rather than letting the dataclass repr leak into the header.
         if judge_model_obj is not None and hasattr(judge_model_obj, "name"):
             judge_model = judge_model_obj.name or ""
         elif isinstance(judge_model_obj, str):
@@ -233,36 +213,36 @@ def _print_stage_start(stage_name: str, ctx: dict[str, Any], raw_cfg: dict[str, 
         else:
             judge_model = ""
         if judge_model:
-            _progress(f"  Scoring transcripts with judge ({judge_model})...")
+            log.info(f"{tag} Scoring transcripts with judge ({judge_model})...")
         else:
-            _progress(f"  Scoring transcripts...")
+            log.info(f"{tag} Scoring transcripts...")
     else:
-        _progress(f"  {stage_name}...")
+        log.info(f"{tag} Starting...")
 
 
 def _print_stage_done(stage_name: str, elapsed: float, summary: dict[str, Any] | None) -> None:
     """Print a human-readable stage completion summary."""
+    tag = f"[{stage_name}]"
     s = summary or {}
     if stage_name == "policy":
-        # Prefer the new-science key; fall back to legacy for pre-merge artifacts.
         count = s.get("behavior_count") or s.get("sub_risk_count", 0)
         names = s.get("behavior_names") or s.get("sub_risk_names") or []
         preview = ", ".join(names[:3])
         if len(names) > 3:
             preview += f", ... (+{count - 3} more)"
         if preview:
-            _progress(f"  \u2713 Generated {count} behaviors: {preview} ({elapsed:.1f}s)")
+            log.info(f"{tag} \u2713 Generated {count} behaviors: {preview} ({elapsed:.1f}s)")
         else:
-            _progress(f"  \u2713 Generated policy ({elapsed:.1f}s)")
+            log.info(f"{tag} \u2713 Generated policy ({elapsed:.1f}s)")
     elif stage_name == "design":
         factor_sizes = s.get("factor_sizes") or {}
         if factor_sizes:
             sizes_text = ", ".join(
                 f"{name}={size}" for name, size in factor_sizes.items()
             )
-            _progress(f"  \u2713 Designed coverage grid ({sizes_text}) ({elapsed:.1f}s)")
+            log.info(f"{tag} \u2713 Designed coverage grid ({sizes_text}) ({elapsed:.1f}s)")
         else:
-            _progress(f"  \u2713 Designed coverage grid ({elapsed:.1f}s)")
+            log.info(f"{tag} \u2713 Designed coverage grid ({elapsed:.1f}s)")
     elif stage_name == "seeds":
         total = s.get("total", 0)
         prompts = s.get("prompts", 0)
@@ -273,7 +253,7 @@ def _print_stage_done(stage_name: str, elapsed: float, summary: dict[str, Any] |
         if scenarios:
             parts.append(f"{scenarios} scenario{'s' if scenarios != 1 else ''}")
         detail = " (" + ", ".join(parts) + ")" if parts else ""
-        _progress(f"  \u2713 Generated {total} test cases{detail} ({elapsed:.1f}s)")
+        log.info(f"{tag} \u2713 Generated {total} test cases{detail} ({elapsed:.1f}s)")
     elif stage_name == "rollout":
         count = s.get("count", 0)
         cached = s.get("cached_count", 0)
@@ -284,7 +264,7 @@ def _print_stage_done(stage_name: str, elapsed: float, summary: dict[str, Any] |
             extra = f" ({cached} cached)"
         else:
             extra = ""
-        _progress(f"  \u2713 Completed {count} rollouts{extra} ({elapsed:.1f}s)")
+        log.info(f"{tag} \u2713 Completed {count} rollouts{extra} ({elapsed:.1f}s)")
     elif stage_name == "judge":
         count = s.get("count", 0)
         failures = s.get("failures", 0)
@@ -301,9 +281,9 @@ def _print_stage_done(stage_name: str, elapsed: float, summary: dict[str, Any] |
             extra += f", {failures} failures"
         if errors:
             extra += f", {errors} errors"
-        _progress(f"  \u2713 Scored {count} transcripts{cache_extra}{extra} ({elapsed:.1f}s)")
+        log.info(f"{tag} \u2713 Scored {count} transcripts{cache_extra}{extra} ({elapsed:.1f}s)")
     else:
-        _progress(f"  {stage_name} done ({elapsed:.1f}s)")
+        log.info(f"{tag} \u2713 Done ({elapsed:.1f}s)")
 
 
 def run_pipeline(
@@ -353,7 +333,7 @@ def run_pipeline(
         ctx = _load_context(config=config)
         ctx["strict"] = strict
     except (ConfigError, ValueError) as exc:
-        print(f"[config error] {exc}", file=sys.stderr)
+        log.error(f"[config error] {exc}")
         return 1
 
     requested_force_stages = set(force_stages or [])
@@ -361,7 +341,7 @@ def run_pipeline(
     invalid_forced = sorted(requested_force_stages.difference(configured_stage_names))
     if invalid_forced:
         joined = ", ".join(invalid_forced)
-        print(f"[config error] --force-stage stage(s) not present in config: {joined}", file=sys.stderr)
+        log.error(f"[config error] --force-stage stage(s) not present in config: {joined}")
         return 1
 
     # Cascade: forcing an upstream stage logically invalidates every stage
@@ -416,9 +396,9 @@ def run_pipeline(
                 if plan.reused:
                     refresh_compatibility_files(ctx, stage_name, plan.output_paths)
                     update_latest(ctx, stage_name, ref)
-                    _progress(
-                        f"  Skipping {stage_name} (reusing {stage_name} artifact "
-                        f"{plan.version}; input hashes match, use --force-stage {stage_name} to regenerate)"
+                    log.info(
+                        f"[{stage_name}] Reused artifact {plan.version} "
+                        f"(input hashes match, use --force-stage {stage_name} to regenerate)"
                     )
                     continue
                 # Force cacheable stages to write into their versioned artifact
@@ -434,7 +414,9 @@ def run_pipeline(
             ):
                 output_path = Path(ctx["suite_root"]) / module.SUITE_OUTPUT
                 if output_path.exists():
-                    _progress(f"  Skipping {stage_name} (output already exists, use --force-stage {stage_name} to regenerate)")
+                    log.info(
+                        f"[{stage_name}] Skipped (output exists, use --force-stage {stage_name} to regenerate)"
+                    )
                     continue
 
         stages_to_run.append((stage_name, module, raw_cfg))
@@ -480,20 +462,20 @@ def run_pipeline(
             # Print just that message; suppress the multi-screen litellm/httpx
             # traceback unless the user opts into verbose output.
             ok = False
-            _progress(f"  [error] {exc}")
+            log.error(f"[{stage_name}] {exc}")
             if os.environ.get("P2M_VERBOSE_ERRORS") == "1":
-                traceback.print_exc(file=sys.stderr)
+                log.debug("Full traceback:", exc_info=True)
             else:
-                _progress("  (set P2M_VERBOSE_ERRORS=1 to see the full traceback)")
+                log.info("(set P2M_VERBOSE_ERRORS=1 to see the full traceback)")
         except Exception:  # noqa: BLE001
             ok = False
-            traceback.print_exc(file=sys.stderr)
+            log.error(f"[{stage_name}] Unexpected error", exc_info=True)
 
         elapsed = time.monotonic() - stage_start
         if ok:
             _print_stage_done(stage_name, elapsed, stage_result.get("_summary"))
         else:
-            _progress(f"  {stage_name} failed ({elapsed:.1f}s)")
+            log.error(f"[{stage_name}] \u2717 Failed ({elapsed:.1f}s)")
 
         if manifest is not None and module.SCOPE == "run":
             manifest.stages[stage_name] = "completed" if ok else "failed"
@@ -510,23 +492,23 @@ def run_pipeline(
 
     total_elapsed = time.monotonic() - pipeline_start
     if failed_stage is None:
-        _progress(f"  pipeline completed ({total_elapsed:.1f}s)")
+        log.info(f"Pipeline completed ({total_elapsed:.1f}s)")
         if run_root is not None:
-            _progress(f"\n  Results:")
+            log.info("Results:")
             scores_path = run_root / "scores.jsonl"
             metrics_path = run_root / "metrics.json"
             if scores_path.exists():
-                _progress(f"    Scores:  {scores_path}")
+                log.info(f"  Scores:  {scores_path}")
             if metrics_path.exists():
-                _progress(f"    Metrics: {metrics_path}")
-            _progress(f"    Run dir: {run_root}")
+                log.info(f"  Metrics: {metrics_path}")
+            log.info(f"  Run dir: {run_root}")
             suite_id = ctx.get('suite_id', '')
             run_id = ctx.get('run_id', '')
             if suite_id and run_id:
-                _progress(f"\n  Inspect results:")
-                _progress(f"    uv run p2m results status {suite_id} {run_id}")
+                log.info("Inspect results:")
+                log.info(f"  uv run p2m results status {suite_id} {run_id}")
     else:
-        _progress(f"  pipeline failed at {failed_stage} ({total_elapsed:.1f}s)")
+        log.error(f"Pipeline failed at {failed_stage} ({total_elapsed:.1f}s)")
 
     if manifest is None:
         return 0 if failed_stage is None else 1

@@ -17,6 +17,7 @@ from rich.table import Table
 
 from p2m.core.io import load_json, load_jsonl, get_permissible_flag
 from p2m.core.judge import get_verdict_dimension, infer_judge_status, is_valid_event_flag
+from p2m.logging_config import configure_logging
 from p2m.stages import STAGE_NAMES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -490,8 +491,33 @@ def _subrisk_metric_map(rows: Iterable[dict[str, Any]], metric: str) -> dict[str
     ),
 )
 @click.version_option(version="0.1.0", prog_name="p2m")
-def cli():
+@click.option("-v", "--verbose", is_flag=True, help="Enable debug-level logging.")
+@click.option("-q", "--quiet", is_flag=True, help="Suppress info-level output; show only warnings and errors.")
+@click.option(
+    "--log-file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write all log output to a file (in addition to stderr).",
+)
+@click.option(
+    "--output",
+    "output_format",
+    type=click.Choice(["text", "json"], case_sensitive=False),
+    default="text",
+    show_default=True,
+    help="Log output format. Use 'json' for CI pipelines.",
+)
+@click.pass_context
+def cli(ctx: click.Context, verbose: bool, quiet: bool, log_file: Path | None, output_format: str):
     """Safety evaluation workflows for pipeline runs, artifacts, and post-hoc analysis."""
+    ctx.ensure_object(dict)
+    ctx.obj["logging_configured"] = True
+    configure_logging(
+        verbose=verbose,
+        quiet=quiet,
+        log_file=log_file,
+        json_output=(output_format == "json"),
+    )
 
 
 @cli.command(short_help="Run a pipeline from a YAML config")
@@ -514,12 +540,43 @@ def cli():
     show_envvar=True,
 )
 @click.option("--strict", is_flag=True, help="Fail on malformed JSONL inputs instead of skipping bad rows.")
+@click.option("-v", "--verbose", is_flag=True, help="Enable debug-level logging.")
+@click.option("-q", "--quiet", is_flag=True, help="Suppress info-level output; show only warnings and errors.")
+@click.option(
+    "--log-file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write all log output to a file (in addition to stderr).",
+)
+@click.option(
+    "--output",
+    "output_format",
+    type=click.Choice(["text", "json"], case_sensitive=False),
+    default="text",
+    show_default=True,
+    help="Log output format. Use 'json' for CI pipelines.",
+)
+@click.pass_context
 def run(
+    ctx: click.Context,
     config: Path,
     force_stage: tuple[str, ...],
     strict: bool,
+    verbose: bool,
+    quiet: bool,
+    log_file: Path | None,
+    output_format: str,
 ):
     """Run the evaluation pipeline."""
+    # Re-configure logging if flags were passed on the subcommand
+    # (e.g. `p2m run --verbose` instead of `p2m --verbose run`).
+    if verbose or quiet or log_file or output_format != "text":
+        configure_logging(
+            verbose=verbose,
+            quiet=quiet,
+            log_file=log_file,
+            json_output=(output_format == "json"),
+        )
     runner = _load_runner_module()
     rc = runner.run_pipeline(
         config=str(config),
