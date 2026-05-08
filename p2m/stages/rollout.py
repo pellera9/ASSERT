@@ -7,11 +7,12 @@ from dataclasses import asdict
 import hashlib
 import json as json_module
 import logging
-import sys
 import traceback
 import uuid
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 import click
 
@@ -649,10 +650,8 @@ async def _run_auditor_target_loop(
                 ):
                     raise ValueError("auditor returned hidden setup instead of a visible user turn")
                 if auditor_response.finish_reason == "length":
-                    logging.warning(
-                        "Auditor response truncated (finish_reason=length) at turn %d/%d",
-                        turn_index + 1,
-                        max_turns,
+                    log.warning(
+                        f"Auditor response truncated (finish_reason=length) at turn {turn_index + 1}/{max_turns}"
                     )
                 # Remove any retry guidance messages before continuing.
                 auditor_messages = [m for m in auditor_messages if m.content != _AUDITOR_RETRY_GUIDANCE]
@@ -737,10 +736,8 @@ async def _run_auditor_target_loop(
                 )
             )
             if runtime_result.finish_reason == "length":
-                logging.warning(
-                    "Target response truncated (finish_reason=length) at turn %d/%d",
-                    turn_index + 1,
-                    max_turns,
+                log.warning(
+                    f"Target response truncated (finish_reason=length) at turn {turn_index + 1}/{max_turns}"
                 )
         except Exception as exc:
             tb = traceback.format_exc()
@@ -915,9 +912,8 @@ async def run_rollout(
             # Check that existing transcripts were produced with the same config.
             stored_hash = config_hash_path.read_text(encoding="utf-8").strip() if config_hash_path.exists() else None
             if stored_hash is not None and stored_hash != config_hash:
-                logging.warning(
-                    "Rollout config changed since last run - discarding %s and starting fresh",
-                    transcripts_path,
+                log.warning(
+                    f"Rollout config changed since last run - discarding {transcripts_path} and starting fresh"
                 )
                 transcripts_path.unlink()
             else:
@@ -926,9 +922,8 @@ async def run_rollout(
                     if sid:
                         completed_seed_ids.add(str(sid))
     if completed_seed_ids:
-        logging.info(
-            "Resuming rollout: %d seeds already completed, skipping",
-            len(completed_seed_ids),
+        log.info(
+            f"Resuming rollout: {len(completed_seed_ids)} seeds already completed, skipping"
         )
     config_hash_path.write_text(config_hash, encoding="utf-8")
     pending_seeds = [
@@ -1011,21 +1006,12 @@ async def run_rollout(
             or seed_row.get("seed_id", "")
         )
         kind_tag = f"[{kind}] " if kind else ""
-        status = "\u2714" if error is None else f"\u2716 {type(error).__name__}"
-        # Write to sys.__stderr__ rather than sys.stderr. Reproducible
-        # behavior: when the target is an OTel-instrumented LangChain /
-        # LangGraph callable (Phoenix auto_instrument), `sys.stderr` is
-        # silently replaced with a buffering wrapper after the second
-        # rollout. Subsequent writes only emit a trailing "\n"; the
-        # message body is swallowed. Both `sys.__stderr__` (the original
-        # saved by the interpreter at startup) and raw `os.write(2, ...)`
-        # remain unaffected. Bypassing the wrapper here keeps the
-        # per-seed progress visible without disturbing whatever the
-        # instrumentation is doing with sys.stderr.
-        sys.__stderr__.write(
-            f"  rollout [{done}/{total}] {status} {kind_tag}{label}\n"
-        )
-        sys.__stderr__.flush()
+        status = "\u2713" if error is None else f"\u2717 {type(error).__name__}"
+        msg = f"[rollout] [{done}/{total}] {status} {kind_tag}{label}"
+        if error is None:
+            log.info(msg)
+        else:
+            log.warning(msg)
 
     if errors:
         raise errors[0]
