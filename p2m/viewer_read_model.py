@@ -11,8 +11,8 @@ import yaml
 
 from p2m.core.io import write_json, row_behavior
 
-VIEWER_READ_MODEL_SCHEMA_VERSION = 1
-VIEWER_READ_MODEL_GENERATOR_VERSION = "viewer-read-model-v1"
+VIEWER_READ_MODEL_SCHEMA_VERSION = 2
+VIEWER_READ_MODEL_GENERATOR_VERSION = "viewer-read-model-v2"
 VIEWER_CACHE_DIR = ".viewer"
 
 VIEWER_RUN_MANIFEST_FILE = "viewer_run_manifest.json"
@@ -198,9 +198,27 @@ def _event_views(event: dict[str, Any]) -> list[str]:
     return []
 
 
+def _agent_label_from_raw(raw: dict[str, Any] | None) -> str | None:
+    if not isinstance(raw, dict):
+        return None
+    node = raw.get("_node")
+    if isinstance(node, str):
+        node = node.strip()
+        return node or None
+    return None
+
+
 def _materialize_target_messages(transcript_row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Materialize transcript events into viewer messages with turn labels.
+
+    Turn semantics: only the auditor (user) and the target (assistant) emit
+    "turns". A target turn is one block of one or more consecutive assistant
+    messages — sub-agent handoffs and tool calls do not start a new turn.
+    System messages, tool messages, and tool-call edits never get a turn label.
+    """
     messages: list[dict[str, Any]] = []
     judge_turn = 0
+    last_principal_role: str | None = None
     for event_index, event in enumerate(transcript_row.get("events", [])):
         if not isinstance(event, dict):
             continue
@@ -213,6 +231,7 @@ def _materialize_target_messages(transcript_row: dict[str, Any]) -> list[dict[st
         kind = edit.get("type")
         raw = _read_object(event.get("raw"))
         message_id = f"event:{event_index}"
+        agent = _agent_label_from_raw(raw)
 
         if kind in {"add_message", "set_system_message"}:
             payload = _read_object(edit.get("message"))
@@ -222,9 +241,22 @@ def _materialize_target_messages(transcript_row: dict[str, Any]) -> list[dict[st
             content = payload.get("content")
             if not isinstance(role, str) or not isinstance(content, str):
                 continue
-            message_judge_turn = None if kind == "set_system_message" else judge_turn + 1
-            if message_judge_turn is not None:
-                judge_turn = message_judge_turn
+
+            message_judge_turn: int | None
+            if kind == "set_system_message" or role in {"system", "tool"}:
+                message_judge_turn = None
+            elif role == "user":
+                judge_turn += 1
+                message_judge_turn = judge_turn
+                last_principal_role = "user"
+            elif role == "assistant":
+                if last_principal_role != "assistant":
+                    judge_turn += 1
+                message_judge_turn = judge_turn
+                last_principal_role = "assistant"
+            else:
+                message_judge_turn = None
+
             messages.append(
                 {
                     "id": message_id,
@@ -236,6 +268,7 @@ def _materialize_target_messages(transcript_row: dict[str, Any]) -> list[dict[st
                     "tool_call_id": payload.get("tool_call_id"),
                     "function": payload.get("function"),
                     "arguments": payload.get("arguments"),
+                    "agent": agent if role == "assistant" else None,
                     "raw": raw,
                 }
             )
@@ -247,17 +280,17 @@ def _materialize_target_messages(transcript_row: dict[str, Any]) -> list[dict[st
         tool_name = edit.get("tool_name")
         if not isinstance(tool_name, str):
             continue
-        judge_turn += 1
         messages.append(
             {
                 "id": message_id,
                 "role": "tool",
                 "content": "",
                 "type": "tool_call",
-                "judgeTurn": judge_turn,
+                "judgeTurn": None,
                 "tool_call_id": edit.get("tool_call_id"),
                 "function": tool_name,
                 "arguments": edit.get("tool_args") if isinstance(edit.get("tool_args"), dict) else {},
+                "agent": None,
                 "raw": raw,
             }
         )
@@ -265,24 +298,16 @@ def _materialize_target_messages(transcript_row: dict[str, Any]) -> list[dict[st
 
 
 def _count_target_conversation_messages(transcript_row: dict[str, Any]) -> int:
-    count = 0
-    for event in transcript_row.get("events", []):
-        if not isinstance(event, dict):
-            continue
-        if "target" not in _event_views(event):
-            continue
-        edit = _read_object(event.get("edit"))
-        if edit is None:
-            continue
-        if edit.get("type") == "tool_call":
-            count += 1
-            continue
-        payload = _read_object(edit.get("message"))
-        if payload is None:
-            continue
-        if payload.get("role") != "system":
-            count += 1
-    return count
+    """Return the number of target turns (one per auditor message + one per
+    consecutive assistant block). Mirrors :func:`_materialize_target_messages`.
+    """
+    messages = _materialize_target_messages(transcript_row)
+    turns: set[int] = set()
+    for message in messages:
+        turn = message.get("judgeTurn")
+        if isinstance(turn, int):
+            turns.add(turn)
+    return len(turns)
 
 
 def _prompt_preview(transcript_row: dict[str, Any]) -> str:

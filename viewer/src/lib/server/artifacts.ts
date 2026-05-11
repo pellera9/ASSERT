@@ -19,8 +19,8 @@ export const VIEWER_SCORE_INDEX_FILE = 'viewer_score_index.json';
 export const SUITE_METADATA_FILE = 'suite.json';
 export const SUITE_POLICY_FILE = 'policy.json';
 export const SUITE_SYSTEMATIZATION_FILE = 'systematization.json';
-export const VIEWER_READ_MODEL_SCHEMA_VERSION = 1;
-export const VIEWER_READ_MODEL_GENERATOR_VERSION = 'viewer-read-model-v1';
+export const VIEWER_READ_MODEL_SCHEMA_VERSION = 2;
+export const VIEWER_READ_MODEL_GENERATOR_VERSION = 'viewer-read-model-v2';
 
 const SAFE_ID_RE = /^[a-z0-9][a-z0-9._-]*$/i;
 
