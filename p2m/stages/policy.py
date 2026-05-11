@@ -155,7 +155,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
     web_search = web_search_raw if web_search_raw is not None else True
 
     suite_root = Path(ctx["suite_root"])
-    save_dir = raw_cfg.get("save_dir") or str(suite_root)
+    save_dir = raw_cfg.get("save_dir") or ctx.get("policy_artifact_dir") or str(suite_root)
 
     cfg = resolve_stage_paths(
         {"save_dir": save_dir},

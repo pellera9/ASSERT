@@ -861,9 +861,9 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("seeds requires prompt and/or scenario configuration")
 
     path_cfg = {
-        "policy_path": raw_cfg.get("policy_path") or str(Path(ctx["suite_root"]) / "policy.json"),
-        "save_path": raw_cfg.get("save_path") or str(Path(ctx["suite_root"]) / SEEDS_FILE),
-        "design_path": raw_cfg.get("design_path") or str(Path(ctx["suite_root"]) / "design.json"),
+        "policy_path": raw_cfg.get("policy_path") or ctx.get("policy_path") or str(Path(ctx["suite_root"]) / "policy.json"),
+        "save_path": raw_cfg.get("save_path") or ctx.get("seeds_path") or str(Path(ctx["suite_root"]) / SEEDS_FILE),
+        "design_path": raw_cfg.get("design_path") or ctx.get("design_path") or str(Path(ctx["suite_root"]) / "design.json"),
     }
 
     cfg = resolve_stage_paths(
