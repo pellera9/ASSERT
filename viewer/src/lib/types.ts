@@ -98,6 +98,14 @@ export interface Manifest {
 	pid?: number;
 	host?: string;
 	heartbeat_at?: string;
+	artifact_versions?: Record<string, {
+		version?: string;
+		path?: string;
+		relative_path?: string;
+		artifact_dir?: string;
+		metadata_path?: string;
+		relative_metadata_path?: string;
+	}>;
 }
 
 export interface NodeJudgment {

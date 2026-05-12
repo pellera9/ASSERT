@@ -181,6 +181,88 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             self.assertNotIn("permissible", prompt_rows[0])
             self.assertEqual(audit_rows, [])
 
+    def test_build_viewer_read_model_uses_versioned_seed_artifact_from_manifest(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            suite_dir = tmp_root / "suite-a"
+            run_dir = suite_dir / "run-a"
+            seeds_path = suite_dir / "artifacts" / "seeds" / "v0001" / "seeds.jsonl"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            seeds_path.parent.mkdir(parents=True, exist_ok=True)
+
+            seeds_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "prompt",
+                        "seed_id": "seed-1",
+                        "concept": "concept",
+                        "factors": {"behavior": "versioned behavior"},
+                        "seed": {"description": "Prompt seed"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (run_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "stages": {"rollout": "completed", "judge": "completed"},
+                        "artifact_versions": {
+                            "seeds": {
+                                "version": "v0001",
+                                "path": "artifacts/seeds/v0001/seeds.jsonl",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "config.yaml").write_text(
+                "pipeline:\n  rollout:\n    target:\n      model:\n        name: target-model\n",
+                encoding="utf-8",
+            )
+            (run_dir / "transcripts.jsonl").write_text(
+                json.dumps(
+                    {
+                        "kind": "prompt",
+                        "seed_id": "seed-1",
+                        "concept": "concept",
+                        "target": "target-model",
+                        "events": [],
+                        "llm_calls": [],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (run_dir / "scores.jsonl").write_text(
+                json.dumps(
+                    {
+                        "kind": "prompt",
+                        "seed_id": "seed-1",
+                        "concept": "concept",
+                        "judge_model": "judge-model",
+                        "target": "target-model",
+                        "judge_status": "ok",
+                        "verdict": {
+                            "dimensions": {"policy_violation": False},
+                            "justification": "clear",
+                            "node_judgments": [],
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            build_run_viewer_artifacts(run_dir)
+            prompt_rows = json.loads(
+                (run_dir / ".viewer" / "viewer_prompt_rows.json").read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(prompt_rows[0]["factors"]["behavior"], "versioned behavior")
+
     def test_build_viewer_read_model_rejects_duplicate_transcript_keys(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             tmp_root = Path(tmp_dir)
@@ -398,6 +480,58 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertIn("policy_violation", payload["keys"])
             self.assertIn("overrefusal", payload["keys"])
+
+    def test_load_suite_snapshot_excludes_artifacts_cache_directory_from_runs(self) -> None:
+        with TemporaryDirectory(dir=ROOT / "viewer") as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            harness_dir = tmp_root / "harness"
+            harness_dir.mkdir()
+            self._copy_data_harness(harness_dir)
+
+            artifacts_root = tmp_root / "artifacts" / "results"
+            suite_dir = artifacts_root / "suite-a"
+            run_dir = suite_dir / "run-a"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "manifest.json").write_text(
+                json.dumps({"status": "completed"}), encoding="utf-8"
+            )
+            (suite_dir / "suite.json").write_text(
+                json.dumps({"created_at": "2026-04-02T00:00:00Z"}), encoding="utf-8"
+            )
+
+            cache_dir = suite_dir / "artifacts" / "seeds" / "v0001"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            (cache_dir / "seeds.jsonl").write_text("", encoding="utf-8")
+
+            env = os.environ.copy()
+            env.update(
+                {
+                    "ARTIFACTS_ROOT": str(artifacts_root),
+                    "MEASUREMENTS_ROOT": str(tmp_root),
+                }
+            )
+            script = textwrap.dedent(
+                """\
+                try {
+                  const { loadSuiteSnapshot } = await import('./artifacts.ts');
+                  const snapshot = loadSuiteSnapshot('suite-a');
+                  console.log(JSON.stringify({ ok: true, runIds: snapshot?.runIds ?? [] }));
+                } catch (error) {
+                  console.log(JSON.stringify({
+                    ok: false,
+                    name: error.name,
+                    message: error.message
+                  }));
+                }
+                """
+            )
+            result = self._run_node(harness_dir=harness_dir, script=script, env=env)
+
+            self.assertEqual(result.returncode, 0, msg=f"{result.stdout}\n{result.stderr}")
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"], msg=payload)
+            self.assertEqual(sorted(payload["runIds"]), ["run-a"])
+            self.assertNotIn("artifacts", payload["runIds"])
 
     def test_load_run_page_data_reads_live_transcripts_during_rollout(self) -> None:
         with TemporaryDirectory(dir=ROOT / "viewer") as tmp_dir:
@@ -1587,6 +1721,105 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             self.assertEqual(len(payload), 1)
             self.assertEqual(payload[0]["suite_id"], "suite-a")
             self.assertEqual(payload[0]["status"], "has_results")
+
+
+class ViewerReadModelHelpersTest(unittest.TestCase):
+    """Tests for path-traversal defenses that don't depend on Node TS support."""
+
+    def test_manifest_relative_path_rejects_parent_directory_segments(self) -> None:
+        from p2m.viewer_read_model import _manifest_relative_path, _seed_artifact_path
+
+        with TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / "suite-a"
+            suite_dir.mkdir(parents=True)
+
+            self.assertIsNone(_manifest_relative_path(suite_dir, "../../etc/passwd"))
+            self.assertIsNone(_manifest_relative_path(suite_dir, "artifacts/../../escape"))
+            self.assertEqual(
+                _manifest_relative_path(suite_dir, "artifacts/seeds/v0001/seeds.jsonl"),
+                suite_dir / "artifacts" / "seeds" / "v0001" / "seeds.jsonl",
+            )
+
+            malicious_manifest = {
+                "artifact_versions": {
+                    "seeds": {"version": "v0001", "path": "../../etc/passwd"}
+                }
+            }
+            self.assertEqual(
+                _seed_artifact_path(suite_dir, malicious_manifest),
+                suite_dir / "seeds.jsonl",
+            )
+
+            safe_manifest = {
+                "artifact_versions": {
+                    "seeds": {"version": "v0001", "path": "artifacts/seeds/v0001/seeds.jsonl"}
+                }
+            }
+            self.assertEqual(
+                _seed_artifact_path(suite_dir, safe_manifest),
+                suite_dir / "artifacts" / "seeds" / "v0001" / "seeds.jsonl",
+            )
+
+    def test_seed_artifact_path_rejects_absolute_paths(self) -> None:
+        """Regression for Copilot review #003 (round 2).
+
+        A tampered manifest that supplies an absolute seed path must be
+        ignored — otherwise the absolute branch silently bypasses the
+        relative ``..`` defense and reads from anywhere on disk.
+        """
+
+        from p2m.viewer_read_model import _seed_artifact_path
+
+        with TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / "suite-a"
+            suite_dir.mkdir(parents=True)
+
+            absolute_target = Path(tmp_dir) / "outside.jsonl"
+            absolute_target.write_text("{}\n", encoding="utf-8")
+
+            malicious_manifest = {
+                "artifact_versions": {
+                    "seeds": {
+                        "version": "v0001",
+                        "path": str(absolute_target),
+                    }
+                }
+            }
+            self.assertEqual(
+                _seed_artifact_path(suite_dir, malicious_manifest),
+                suite_dir / "seeds.jsonl",
+            )
+
+    def test_seed_artifact_path_rejects_paths_that_normalize_to_directory(self) -> None:
+        """Regression for Copilot review #002 (round 3).
+
+        A manifest path that normalizes to no segments (``"."``, ``"./"``,
+        ``"/."``) must not resolve to the suite directory itself, or the
+        loader will try to read a directory as a JSONL file (raising
+        IsADirectoryError / EISDIR).
+        """
+
+        from p2m.viewer_read_model import _manifest_relative_path, _seed_artifact_path
+
+        with TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / "suite-a"
+            suite_dir.mkdir(parents=True)
+
+            for raw_path in (".", "./", "/.", "./.", "././"):
+                self.assertIsNone(
+                    _manifest_relative_path(suite_dir, raw_path),
+                    msg=f"expected None for {raw_path!r}",
+                )
+                manifest = {
+                    "artifact_versions": {
+                        "seeds": {"version": "v0001", "path": raw_path}
+                    }
+                }
+                self.assertEqual(
+                    _seed_artifact_path(suite_dir, manifest),
+                    suite_dir / "seeds.jsonl",
+                    msg=f"expected fallback for {raw_path!r}",
+                )
 
 
 if __name__ == "__main__":

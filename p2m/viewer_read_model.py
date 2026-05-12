@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 import yaml
 
 from p2m.core.io import write_json, row_behavior
+
+log = logging.getLogger(__name__)
 
 VIEWER_READ_MODEL_SCHEMA_VERSION = 2
 VIEWER_READ_MODEL_GENERATOR_VERSION = "viewer-read-model-v2"
@@ -48,6 +51,53 @@ def _remove_legacy_viewer_files(run_dir: Path) -> None:
     for filename in _viewer_output_names():
         legacy_path = run_dir / filename
         legacy_path.unlink(missing_ok=True)
+
+
+def _manifest_relative_path(base_dir: Path, raw_path: str) -> Path | None:
+    """Resolve a manifest-provided relative path under ``base_dir``.
+
+    Rejects any path with parent-directory (``..``) segments so that a
+    tampered or corrupted ``manifest.json`` cannot redirect viewer reads
+    outside the suite directory. Also rejects paths that normalize to no
+    segments (e.g. ``"."`` or ``"./"``) so the loader does not try to read
+    the suite directory itself as a JSONL file.
+    """
+
+    parts = [part for part in raw_path.replace("\\", "/").split("/") if part and part != "."]
+    if not parts:
+        log.warning(
+            "Refusing manifest path that normalizes to no segments: %r",
+            raw_path,
+        )
+        return None
+    if any(part == ".." for part in parts):
+        log.warning(
+            "Refusing manifest path with parent segments: %r",
+            raw_path,
+        )
+        return None
+    return base_dir.joinpath(*parts)
+
+
+def _seed_artifact_path(suite_dir: Path, manifest: dict[str, Any] | None) -> Path:
+    """Return the seed artifact path selected by a run, with legacy fallback."""
+
+    artifacts = manifest.get("artifact_versions") if isinstance(manifest, dict) else None
+    if isinstance(artifacts, dict):
+        seeds = artifacts.get("seeds")
+        if isinstance(seeds, dict):
+            raw_path = seeds.get("path") or seeds.get("relative_path")
+            if isinstance(raw_path, str) and raw_path:
+                if Path(raw_path).is_absolute():
+                    log.warning(
+                        "Refusing absolute manifest artifact path: %r",
+                        raw_path,
+                    )
+                else:
+                    resolved = _manifest_relative_path(suite_dir, raw_path)
+                    if resolved is not None:
+                        return resolved
+    return suite_dir / "seeds.jsonl"
 
 
 def _load_json_file(path: Path) -> dict[str, Any]:
@@ -435,8 +485,9 @@ def build_run_viewer_artifacts(run_dir: Path, *, suite_dir: Path | None = None) 
     run_dir = run_dir.resolve()
     suite_dir = (suite_dir or run_dir.parent).resolve()
     relative_root = run_dir
-    seeds_path = suite_dir / "seeds.jsonl"
     manifest_path = run_dir / "manifest.json"
+    manifest = _load_json_file(manifest_path) if manifest_path.exists() else None
+    seeds_path = _seed_artifact_path(suite_dir, manifest)
     config_path = run_dir / "config.yaml"
     transcripts_path = run_dir / "transcripts.jsonl"
     scores_path = run_dir / "scores.jsonl"
@@ -459,8 +510,6 @@ def build_run_viewer_artifacts(run_dir: Path, *, suite_dir: Path | None = None) 
         }
 
     config = _load_yaml_file(config_path)
-    if manifest_path.exists():
-        _load_json_file(manifest_path)
     runtime_mode = _runtime_mode(config)
 
     transcript_by_seed: dict[tuple[str, str], dict[str, Any]] = {}

@@ -118,7 +118,10 @@ async def run_policy(
     )
     policy_json = response.parsed
     if not isinstance(policy_json, dict):
-        raise ValueError("policy generation returned non-JSON output")
+        raise ValueError(
+            f"policy generation returned non-JSON output (model: {model}). "
+            f"Raw text (first 500 chars): {(response.text or '')[:500]}"
+        )
 
     save_path.mkdir(parents=True, exist_ok=True)
     policy_path = save_path / "policy.json"
@@ -155,7 +158,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
     web_search = web_search_raw if web_search_raw is not None else True
 
     suite_root = Path(ctx["suite_root"])
-    save_dir = raw_cfg.get("save_dir") or str(suite_root)
+    save_dir = raw_cfg.get("save_dir") or ctx.get("policy_artifact_dir") or str(suite_root)
 
     cfg = resolve_stage_paths(
         {"save_dir": save_dir},
