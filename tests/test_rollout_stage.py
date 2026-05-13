@@ -1048,6 +1048,15 @@ class RolloutStageTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(row["seed_id"] for row in final_rows), ["seed_000001", "seed_000002"])
 
     async def test_run_rollout_keeps_partial_successful_transcripts_when_later_worker_fails(self) -> None:
+        """A per-row worker failure no longer kills the stage outright.
+
+        With the resilience fix in place, the rollout stage tolerates
+        per-row failures so long as at least one seed produced a useful
+        transcript. The successful transcript stays on disk and the
+        stage returns with ``errored_count`` reflecting the failure.
+        Re-running the same suite picks up the failed seed via the
+        existing resume logic (it never made it into transcripts.jsonl).
+        """
         seed_rows = [
             {"kind": "prompt", "seed": {"description": "successful prompt"}},
             {"kind": "prompt", "seed": {"description": "failing prompt"}},
@@ -1103,8 +1112,7 @@ class RolloutStageTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual([row["seed_id"] for row in interim_rows], ["seed_000001"])
 
                 release_failure.set()
-                with self.assertRaisesRegex(RuntimeError, "boom"):
-                    await rollout_task
+                result = await rollout_task
 
             final_rows = [
                 json.loads(line)
@@ -1112,6 +1120,42 @@ class RolloutStageTest(unittest.IsolatedAsyncioTestCase):
             ]
 
         self.assertEqual([row["seed_id"] for row in final_rows], ["seed_000001"])
+        self.assertEqual(result["errored_count"], 1)
+        self.assertEqual(result["new_count"], 2)
+        self.assertEqual(result["target_error_count"], 0)
+
+    async def test_run_rollout_fails_when_all_seeds_error_and_no_cache(self) -> None:
+        """If every seed errors and nothing was previously cached, the
+        stage still fails — that's a systemic problem (auth, config,
+        broken target) rather than per-row noise, and silently
+        completing would be misleading.
+        """
+        seed_rows = [
+            {"kind": "prompt", "seed": {"description": "first failing prompt"}},
+            {"kind": "prompt", "seed": {"description": "second failing prompt"}},
+        ]
+
+        async def fake_run_prompt_seed(**kwargs):
+            raise RuntimeError("boom")
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            seed_path = tmp_path / "seeds.jsonl"
+            out_dir = tmp_path / "run"
+            seed_path.write_text("\n".join(json.dumps(row) for row in seed_rows) + "\n", encoding="utf-8")
+
+            with patch("p2m.stages.rollout._run_prompt_seed", new=fake_run_prompt_seed):
+                with self.assertRaisesRegex(RuntimeError, "boom"):
+                    await run_rollout(
+                        seed_path=str(seed_path),
+                        target=TargetConfig(model="azure/gpt-5.4"),
+                        evaluation=EvaluationConfig(
+                            judge=JudgeConfig(model="azure/gpt-5.4"),
+                            rollout=RolloutConfig(concurrency=2),
+                        ),
+                        save_dir=str(out_dir),
+                        run_id="run-rollout",
+                    )
 
     async def test_run_rollout_resumes_from_existing_transcripts(self) -> None:
         """Pre-populated transcripts.jsonl causes completed seeds to be skipped."""
