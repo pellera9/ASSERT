@@ -54,14 +54,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from p2m.runner import run_pipeline  # noqa: E402
 from p2m.logging_config import configure_logging  # noqa: E402
-from p2m.core.model_client import LLMInputError  # noqa: E402
-from p2m.core.transcript import (  # noqa: E402
-    AddMessageEdit,
-    Message,
-    Transcript,
-    TranscriptEvent,
-    TranscriptMetadata,
-)
 
 DEFAULT_BASE_CONFIG = REPO_ROOT / "examples" / "benchmark" / "eval_config.yaml"
 # Quality-only concept colocated with the benchmark config. We deliberately
@@ -95,8 +87,10 @@ CSV_FIELDS = [
     "exit_code",
     "wall_time_s",
     "rate_limit_cooldowns",
-    "content_filter_blocked",
-    "target_error_tolerated",
+    "target_input_refused_count",
+    "auditor_input_refused_count",
+    "target_error_count",
+    "judge_filter_skipped_count",
     "scenario_seeds_generated",
     "scenarios_scored",
     "policy_violation_true_rate",
@@ -106,232 +100,67 @@ CSV_FIELDS = [
 ]
 
 
-# Module-level counter for content-filter-blocked seeds. The lenient wrapper
-# (see _install_content_filter_tolerance below) increments this per blocked
-# seed so the benchmark summary can report it.
-_CONTENT_FILTER_BLOCKS: dict[str, int] = {"count": 0}
+# Module-level placeholder kept so older external scripts that reference
+# this attribute don't crash. The actual counting is now done by scanning
+# transcripts.jsonl / scores.jsonl after the run completes (see
+# ``_scan_run_artifacts`` below). Product code records typed refusals as
+# ``stop_reason='target_input_refused'`` / ``'auditor_input_refused'``
+# (rollout) and ``judge_status='filter_skipped'`` (judge).
+_REFUSAL_COUNTS_DEFAULT: dict[str, int] = {
+    "target_input_refused": 0,
+    "auditor_input_refused": 0,
+    "target_error": 0,
+    "judge_filter_skipped": 0,
+}
 
-# Module-level counter for seeds whose target raised (and which the rollout
-# stage would otherwise treat as fatal). The lenient wrapper rewrites the
-# stop_reason so the worker post-processing doesn't synthesize a stage-killer
-# RuntimeError, then increments this counter. High counts at high concurrency
-# are a real signal that the target can't keep up — surface it in the CSV.
-_TARGET_ERROR_TOLERATED: dict[str, int] = {"count": 0}
 
+def _scan_run_artifacts(suite_id: str, run_id: str) -> dict[str, int]:
+    """Count typed refusals + target errors in a completed run's artifacts.
 
-def _is_content_policy_violation(exc: BaseException | None) -> bool:
-    """Return True when ``exc`` (or its chain) is a provider content-filter error.
-
-    Azure surfaces filter rejections via at least two paths:
-
-    1. ``litellm.ContentPolicyViolationError`` (subclass of BadRequestError),
-       used for the standard ResponsibleAIPolicyViolation path including
-       Prompt Shields jailbreak detection.
-    2. A plain ``litellm.BadRequestError`` whose message contains "flagged
-       as potentially violating our usage policy" — Azure's reasoning-model
-       moderation pipeline returns this without the structured subclass.
-
-    We accept both. Class checks use names (no hard import of litellm) so
-    the benchmark stays usable when the underlying provider isn't Azure.
+    Replaces the legacy monkey-patches that wrapped ``_run_scenario_seed``
+    and ``run_llm_judge``: as of the PR #44 absorb, product code records
+    typed per-row refusals natively. We just read the transcript /
+    scores files and count, which is simpler and doesn't require
+    patching internal product-code attributes.
     """
-    filter_phrases = (
-        "content management policy",
-        "flagged as potentially violating our usage policy",
-        "jailbreak",
-        "responsibleaipolicyviolation",
-    )
-    seen: set[int] = set()
-    cur: BaseException | None = exc
-    while cur is not None and id(cur) not in seen:
-        seen.add(id(cur))
-        cls_name = type(cur).__name__
-        if cls_name == "ContentPolicyViolationError":
-            return True
-        if cls_name == "BadRequestError":
-            msg = str(cur).lower()
-            if any(phrase in msg for phrase in filter_phrases):
-                return True
-        msg = str(cur).lower()
-        if any(phrase in msg for phrase in filter_phrases):
-            return True
-        cur = cur.__cause__ or cur.__context__
-    return False
+    counts: dict[str, int] = {
+        "target_input_refused": 0,
+        "auditor_input_refused": 0,
+        "target_error": 0,
+        "judge_filter_skipped": 0,
+    }
+    if not suite_id or not run_id:
+        return counts
+    run_dir = REPO_ROOT / "artifacts" / "results" / suite_id / run_id
 
+    transcripts_path = run_dir / "transcripts.jsonl"
+    if transcripts_path.exists():
+        for line in transcripts_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            stop = row.get("stop_reason")
+            if stop in counts:
+                counts[stop] += 1
 
-def _install_content_filter_tolerance() -> None:
-    """Wrap ``_run_scenario_seed`` so content-filter rejections don't fail the stage.
+    scores_path = run_dir / "scores.jsonl"
+    if scores_path.exists():
+        for line in scores_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("judge_status") == "filter_skipped":
+                counts["judge_filter_skipped"] += 1
 
-    Azure Prompt Shields will deterministically reject ~5–10% of synthetic
-    benign personas as suspected jailbreak attempts (the role-play framing
-    pattern-matches its training set even when the actual content is
-    innocuous). For a throughput benchmark we want those seeds to be
-    counted and skipped, not to abort the whole run.
-
-    We intercept :func:`p2m.stages.rollout._run_scenario_seed` and, when
-    its underlying LLM call raises ``LLMInputError`` caused by litellm's
-    ``ContentPolicyViolationError``, return a synthetic ``Transcript``
-    with ``stop_reason="content_filter_blocked"`` and a single system
-    note explaining the block. The rollout worker then treats the seed
-    as a normal completion and the stage continues.
-
-    Idempotent: calling this twice is a no-op after the first install.
-    """
-    from p2m.stages import rollout as _rollout_mod
-
-    if getattr(_rollout_mod, "_BENCHMARK_LENIENT_INSTALLED", False):
-        return
-
-    _orig = _rollout_mod._run_scenario_seed
-
-    async def _lenient_run_scenario_seed(
-        *,
-        seed: dict[str, Any],
-        target: Any,
-        evaluation: Any,
-        max_tokens: int,
-        config_path: Path | None,
-    ) -> Transcript:
-        try:
-            transcript = await _orig(
-                seed=seed,
-                target=target,
-                evaluation=evaluation,
-                max_tokens=max_tokens,
-                config_path=config_path,
-            )
-        except LLMInputError as exc:
-            if not _is_content_policy_violation(exc):
-                raise
-            seed_id = str(seed.get("seed_id") or "?")
-            auditor_model = ""
-            if evaluation and evaluation.auditor and evaluation.auditor.model:
-                auditor_model = str(evaluation.auditor.model.name or "")
-            target_label = ""
-            if target and target.model:
-                target_label = str(target.model.name or "")
-            elif target:
-                target_label = str(
-                    target.connector or target.callable or target.endpoint or ""
-                )
-            transcript = Transcript(
-                metadata=TranscriptMetadata(
-                    kind="scenario",
-                    seed_id=seed_id,
-                    concept=str(seed.get("concept") or ""),
-                    target=target_label,
-                    auditor_model=auditor_model,
-                    factors=(seed.get("factors") or {}) if isinstance(seed.get("factors"), dict) else None,
-                ),
-                events=[
-                    TranscriptEvent(
-                        view=["system", "combined"],
-                        actor="system",
-                        edit=AddMessageEdit(
-                            message=Message(
-                                role="system",
-                                content=(
-                                    "[CONTENT FILTER BLOCKED] Auditor turn "
-                                    "rejected by provider content filter "
-                                    "(jailbreak / policy). Seed skipped for "
-                                    "benchmark continuity.\n"
-                                    f"Underlying error: {exc}"
-                                ),
-                            )
-                        ),
-                    )
-                ],
-                stop_reason="content_filter_blocked",
-            )
-            _CONTENT_FILTER_BLOCKS["count"] += 1
-            logging.getLogger("benchmark").warning(
-                "[rollout] seed %s blocked by content filter — recorded and skipped (total blocks: %d)",
-                seed_id,
-                _CONTENT_FILTER_BLOCKS["count"],
-            )
-            return transcript
-
-        # The original ran to completion. The rollout stage's worker
-        # post-processing treats `stop_reason == "target_error"` as a
-        # stage-fatal condition (it synthesises a RuntimeError that
-        # short-circuits the whole stage at line ~1075). For benchmarking
-        # we want to count those seeds and continue, so we rename the
-        # stop reason to a sentinel the post-processing won't match.
-        if transcript.stop_reason == "target_error":
-            seed_id = str(seed.get("seed_id") or "?")
-            transcript.stop_reason = "target_error_tolerated"
-            _TARGET_ERROR_TOLERATED["count"] += 1
-            logging.getLogger("benchmark").warning(
-                "[rollout] seed %s ended with target_error — recorded and tolerated (total: %d)",
-                seed_id,
-                _TARGET_ERROR_TOLERATED["count"],
-            )
-        return transcript
-
-    _rollout_mod._run_scenario_seed = _lenient_run_scenario_seed
-    _rollout_mod._BENCHMARK_LENIENT_INSTALLED = True
-
-
-def _install_judge_skip_blocked() -> None:
-    """Make the judge stage no-op on content-filter-blocked transcripts.
-
-    A blocked transcript has no real conversation to score. Sending its
-    (essentially empty) XML to the judge LLM either yields garbage
-    verdicts or — if the judge model also has Prompt Shields on — gets
-    re-rejected and kills the stage.
-
-    We intercept :func:`p2m.stages.judge.run_llm_judge` and short-circuit
-    when the supplied transcript's ``stop_reason`` is
-    ``"content_filter_blocked"``, returning a synthetic verdict that
-    flags the row as filter-skipped without hitting the judge model.
-    """
-    from p2m.stages import judge as _judge_mod
-
-    if getattr(_judge_mod, "_BENCHMARK_LENIENT_INSTALLED", False):
-        return
-
-    _orig_judge = _judge_mod.run_llm_judge
-
-    async def _lenient_run_llm_judge(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        transcript = kwargs.get("transcript")
-        if transcript is not None and getattr(transcript, "stop_reason", None) == "content_filter_blocked":
-            return {
-                "judge_status": "filter_skipped",
-                "judge_error": "content_filter_blocked: rollout was blocked by content filter; judge skipped",
-                "verdict": {},
-                "multi_judge": None,
-            }
-        try:
-            return await _orig_judge(*args, **kwargs)
-        except LLMInputError as exc:
-            # The judge LLM itself was rejected by Prompt Shields (the
-            # transcript content tripped the content filter when sent to
-            # the judge model). Treat this exactly like a pre-blocked
-            # rollout: synthesize a filter-skipped verdict and keep the
-            # benchmark moving.
-            if not _is_content_policy_violation(exc):
-                raise
-            seed_id = ""
-            if transcript is not None and getattr(transcript, "metadata", None) is not None:
-                seed_id = str(getattr(transcript.metadata, "seed_id", "") or "")
-            _CONTENT_FILTER_BLOCKS["count"] += 1
-            logging.getLogger("benchmark").warning(
-                "[judge] seed %s blocked by content filter during judging — recorded and skipped (total blocks: %d)",
-                seed_id or "?",
-                _CONTENT_FILTER_BLOCKS["count"],
-            )
-            return {
-                "judge_status": "filter_skipped",
-                "judge_error": (
-                    "content_filter_blocked_during_judge: the judge LLM "
-                    "rejected the transcript on content-policy grounds; "
-                    f"underlying error: {exc}"
-                ),
-                "verdict": {},
-                "multi_judge": None,
-            }
-
-    _judge_mod.run_llm_judge = _lenient_run_llm_judge
-    _judge_mod._BENCHMARK_LENIENT_INSTALLED = True
+    return counts
 
 
 def _silence_asyncio_close_noise() -> None:
@@ -636,10 +465,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--no-tolerate-content-filter",
         action="store_true",
         help=(
-            "Skip the lenient content-filter wrapper. By default the "
-            "benchmark catches Azure Prompt Shields rejections and skips "
-            "those seeds (counted in the CSV) so a 100/500/1000-seed run "
-            "isn't aborted by ~5–10%% false-positive jailbreak detections."
+            "DEPRECATED: this flag is now a no-op. Per-row tolerance for "
+            "Azure Prompt Shields and other input refusals is handled "
+            "natively by product code (target_input_refused / "
+            "auditor_input_refused / judge filter_skipped). Kept for "
+            "backward compatibility."
         ),
     )
     parser.add_argument(
@@ -735,19 +565,17 @@ def main(argv: list[str] | None = None) -> int:
             else args.auditor_prompt,
         )
 
-    # Install lenient content-filter handling unless the user opted out.
-    # Resets the per-run blocked-seed counters so back-to-back invocations
-    # in the same Python process don't accumulate counts across runs.
-    if not args.no_tolerate_content_filter:
-        _CONTENT_FILTER_BLOCKS["count"] = 0
-        _TARGET_ERROR_TOLERATED["count"] = 0
-        _install_content_filter_tolerance()
-        _install_judge_skip_blocked()
+    # Per-row tolerance for content-filter rejections is now handled
+    # natively by product code (target_input_refused / auditor_input_refused
+    # in rollout, judge_status='filter_skipped' in judge). The legacy
+    # monkey-patches are gone; we count typed refusals after the run by
+    # scanning transcripts.jsonl + scores.jsonl. The
+    # --no-tolerate-content-filter flag is preserved for back-compat but
+    # is now a no-op (the typed handlers always run).
+    if args.no_tolerate_content_filter:
         logging.getLogger("benchmark").info(
-            "Content-filter tolerance enabled (blocked seeds will be recorded "
-            "with stop_reason=content_filter_blocked, target_error seeds will "
-            "be retained as target_error_tolerated, and the judge will skip "
-            "filter-blocked transcripts)."
+            "--no-tolerate-content-filter is a no-op as of the PR #44 absorb; "
+            "product code now records typed per-row refusals natively."
         )
 
     counter = _RateLimitCounter()
@@ -770,22 +598,25 @@ def main(argv: list[str] | None = None) -> int:
         root_logger.removeHandler(counter)
 
     metrics_summary = _load_metrics_summary(suite_id, run_id)
+    refusal_counts = _scan_run_artifacts(suite_id, run_id)
     run_dir = REPO_ROOT / "artifacts" / "results" / suite_id / run_id
 
     print()
     print("-" * 72)
-    print(f"Wall time            : {wall_time:.1f}s")
-    print(f"Exit code            : {exit_code}")
-    print(f"Rate-limit cooldowns : {counter.count}")
-    blocked = _CONTENT_FILTER_BLOCKS["count"]
-    target_errors = _TARGET_ERROR_TOLERATED["count"]
-    if blocked:
-        print(f"Content-filter blocks: {blocked}")
-    if target_errors:
-        print(f"Target-error seeds   : {target_errors}")
+    print(f"Wall time              : {wall_time:.1f}s")
+    print(f"Exit code              : {exit_code}")
+    print(f"Rate-limit cooldowns   : {counter.count}")
+    if refusal_counts["target_input_refused"]:
+        print(f"Target input refused   : {refusal_counts['target_input_refused']}")
+    if refusal_counts["auditor_input_refused"]:
+        print(f"Auditor input refused  : {refusal_counts['auditor_input_refused']}")
+    if refusal_counts["target_error"]:
+        print(f"Target errors          : {refusal_counts['target_error']}")
+    if refusal_counts["judge_filter_skipped"]:
+        print(f"Judge filter skipped   : {refusal_counts['judge_filter_skipped']}")
     if metrics_summary.get("scenarios_scored") not in ("", None):
-        print(f"Scenarios scored     : {metrics_summary['scenarios_scored']}")
-    print(f"Run dir              : {run_dir}")
+        print(f"Scenarios scored       : {metrics_summary['scenarios_scored']}")
+    print(f"Run dir                : {run_dir}")
     print("-" * 72)
 
     if not args.no_csv:
@@ -798,14 +629,16 @@ def main(argv: list[str] | None = None) -> int:
             "exit_code": exit_code,
             "wall_time_s": round(wall_time, 2),
             "rate_limit_cooldowns": counter.count,
-            "content_filter_blocked": blocked,
-            "target_error_tolerated": target_errors,
+            "target_input_refused_count": refusal_counts["target_input_refused"],
+            "auditor_input_refused_count": refusal_counts["auditor_input_refused"],
+            "target_error_count": refusal_counts["target_error"],
+            "judge_filter_skipped_count": refusal_counts["judge_filter_skipped"],
             "config_path": str(target_config),
             "run_dir": str(run_dir),
             **metrics_summary,
         }
         _append_results_row(args.results_csv, row)
-        print(f"Appended summary to  : {args.results_csv}")
+        print(f"Appended summary to    : {args.results_csv}")
 
     return exit_code
 
