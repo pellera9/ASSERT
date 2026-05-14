@@ -297,24 +297,30 @@ def _prepare_run_dir(
 
 
 def _load_metrics_summary(suite_id: str, run_id: str) -> dict[str, Any]:
-    """Pull headline outcome numbers from the run's score/seed artifacts.
+    """Pull headline outcome numbers from this run's score artifacts.
 
-    Returns empty values rather than failing — a non-zero exit code from
+    Returns empty values rather than failing -- a non-zero exit code from
     the pipeline is the authoritative success signal.
 
-    Note: outcome metrics are computed from ``scores.jsonl`` (via
-    :func:`p2m.results.load_run_summary`) and the seed count comes from
-    ``<suite>/seeds.jsonl`` (via :func:`p2m.results.count_seed_kinds`).
-    The runner's ``metrics.json`` is now token-usage telemetry only and
-    no longer carries scenario/seed outcome counts.
+    All four outcome fields are sourced from the run's ``scores.jsonl``
+    via :func:`p2m.results.load_run_summary`. ``scenario_seeds_generated``
+    is the count of scenario rows that reached the judge stage in this
+    run; ``scenarios_scored`` is the subset that judge successfully
+    scored (i.e. ``judge_status == "ok"``). For partial-seeds runs that
+    skip cache finalization, this keeps the CSV row internally
+    consistent with the other per-run columns (cooldowns, target_errors,
+    wall_time_s) instead of reading the suite-root compatibility
+    ``seeds.jsonl`` which only refreshes on full-success runs.
+
+    The runner's ``metrics.json`` is token-usage telemetry only and is
+    not consulted here.
     """
     # Imported lazily so this script keeps working in environments where
     # the package isn't fully installed (e.g. running via ``python
     # scripts/benchmark.py`` without ``uv run``).
-    from p2m.results import count_seed_kinds, load_run_summary
+    from p2m.results import load_run_summary
 
-    results_root = REPO_ROOT / "artifacts" / "results" / suite_id
-    run_dir = results_root / run_id
+    run_dir = REPO_ROOT / "artifacts" / "results" / suite_id / run_id
 
     summary: dict[str, Any] = {
         "scenario_seeds_generated": "",
@@ -323,14 +329,6 @@ def _load_metrics_summary(suite_id: str, run_id: str) -> dict[str, Any]:
         "overrefusal_true_rate": "",
     }
 
-    seeds_path = results_root / "seeds.jsonl"
-    if seeds_path.exists():
-        try:
-            _, scenario_count = count_seed_kinds(seeds_path)
-            summary["scenario_seeds_generated"] = scenario_count
-        except (OSError, json.JSONDecodeError):
-            pass
-
     if run_dir.exists():
         try:
             run_summary = load_run_summary(run_dir)
@@ -338,6 +336,9 @@ def _load_metrics_summary(suite_id: str, run_id: str) -> dict[str, Any]:
             run_summary = None
         scenario_metrics = (run_summary or {}).get("scenario_metrics")
         if isinstance(scenario_metrics, dict):
+            total = scenario_metrics.get("total")
+            if isinstance(total, int):
+                summary["scenario_seeds_generated"] = total
             scored = scenario_metrics.get("scored_total")
             if isinstance(scored, int):
                 summary["scenarios_scored"] = scored

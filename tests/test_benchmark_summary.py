@@ -6,10 +6,14 @@ was still reading ``scenario_metrics`` / ``policy_violation`` /
 ``overrefusal`` from that file, so the outcome columns in the benchmark
 CSV silently went blank on every run. Jake's review caught it.
 
-Fix (verified by these tests): ``_load_metrics_summary`` now reads
-``scores.jsonl`` (via :func:`p2m.results.load_run_summary`) and
-``seeds.jsonl`` (via :func:`p2m.results.count_seed_kinds`). The runner's
-``metrics.json`` is no longer consulted for outcome data.
+Fix (verified by these tests): ``_load_metrics_summary`` now sources all
+four outcome columns from the run's ``scores.jsonl`` (via
+:func:`p2m.results.load_run_summary`). The runner's ``metrics.json``
+is no longer consulted for outcome data, and the suite-root
+compatibility ``seeds.jsonl`` is not consulted either -- it only
+refreshes on full-success runs and would produce stale or blank
+readings for partial-seeds runs that exit 0 but skip cache
+finalization.
 """
 from __future__ import annotations
 
@@ -143,7 +147,8 @@ class LoadMetricsSummaryTest(unittest.TestCase):
             with patch.object(self.benchmark, "REPO_ROOT", repo_root):
                 summary = self.benchmark._load_metrics_summary("suite-bench", "run-001")
 
-            # 4 scenario seeds in seeds.jsonl, 1 prompt is filtered out.
+            # 4 scenario score rows feed scenario_metrics.total, which
+            # is what scenario_seeds_generated now sources from.
             self.assertEqual(summary["scenario_seeds_generated"], 4)
             # All 4 scenario score rows are scored ('ok').
             self.assertEqual(summary["scenarios_scored"], 4)
@@ -208,6 +213,43 @@ class LoadMetricsSummaryTest(unittest.TestCase):
             self.assertEqual(summary["scenarios_scored"], 1)
             self.assertAlmostEqual(summary["policy_violation_true_rate"], 1.0)
             self.assertAlmostEqual(summary["overrefusal_true_rate"], 0.0)
+
+    def test_ignores_stale_suite_root_seeds_jsonl(self) -> None:
+        """The suite-root ``seeds.jsonl`` compatibility file refreshes
+        only when the seeds stage cleanly finalizes its cacheable
+        artifact. For partial-seeds runs that exit 0 but skip
+        finalization (the runner gate added in this PR), that file is
+        either missing (first-ever run) or stale (prior run's count).
+
+        This test plants a deliberately-misleading suite-root
+        ``seeds.jsonl`` with a wrong scenario count and asserts the
+        scanner still reports the count from THIS run's
+        ``scores.jsonl`` -- not the suite-root file.
+        """
+        with TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            self._write_artifacts(
+                repo_root,
+                "suite-bench",
+                "run-003",
+                # Suite-root seeds.jsonl claims 99 scenarios (the
+                # "stale prior run" shape).
+                seed_rows=[
+                    {"kind": "scenario", "seed_id": f"stale-{i}"}
+                    for i in range(99)
+                ],
+                # But this run actually only scored 2 scenarios.
+                score_rows=[
+                    _scenario_score_row("s-0", policy_violation=False, overrefusal=False),
+                    _scenario_score_row("s-1", policy_violation=True, overrefusal=False),
+                ],
+            )
+
+            with patch.object(self.benchmark, "REPO_ROOT", repo_root):
+                summary = self.benchmark._load_metrics_summary("suite-bench", "run-003")
+
+            self.assertEqual(summary["scenario_seeds_generated"], 2)
+            self.assertEqual(summary["scenarios_scored"], 2)
 
 
 if __name__ == "__main__":
