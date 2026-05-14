@@ -386,7 +386,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, str]:
             "failures": result.get("judge_failures", 0),
             # Surfaced so the runner can skip finalize_artifact_plan when
             # any per-row error occurred. A partial scores.jsonl must
-            # not be tagged as a complete cacheable artifact ΓÇö a future
+            # not be tagged as a complete cacheable artifact -- a future
             # cache hit would silently reuse the smaller file.
             "errored_count": int(result.get("errored_count", 0) or 0),
         },

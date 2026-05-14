@@ -499,7 +499,7 @@ class RunnerArtifactCacheTest(unittest.TestCase):
             seeds_root = root / "results" / "suite-a" / "artifacts" / "seeds"
 
             # The partial seeds.jsonl is preserved in the version dir for
-            # inspection ΓÇö we don't throw it away just because some
+            # inspection -- we don't throw it away just because some
             # batches failed.
             self.assertTrue((seeds_root / "v0001" / "seeds.jsonl").exists())
 
@@ -515,7 +515,7 @@ class RunnerArtifactCacheTest(unittest.TestCase):
                 self.assertNotIn("seeds", latest.get("artifacts", {}))
 
             # Re-run with identical inputs but a fully-successful seeds
-            # stage. The runner must NOT reuse the partial v0001 ΓÇö it
+            # stage. The runner must NOT reuse the partial v0001 -- it
             # must allocate a fresh version (v0002 in our case, since
             # v0001 still occupies the slot on disk) and call seeds again.
             seen.clear()
