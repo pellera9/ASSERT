@@ -835,7 +835,6 @@ async def _run_auditor_target_loop(
                     ),
                 ),
             ))
-            auditor_messages.append(Message(role="user", content=f"<target_error>{exc}</target_error>"))
             stop_reason = "target_input_refused"
             break
         except (LLMAuthError, LLMRateLimitError, LLMProviderError):

@@ -106,12 +106,6 @@ CSV_FIELDS = [
 # ``_scan_run_artifacts`` below). Product code records typed refusals as
 # ``stop_reason='target_input_refused'`` / ``'auditor_input_refused'``
 # (rollout) and ``judge_status='filter_skipped'`` (judge).
-_REFUSAL_COUNTS_DEFAULT: dict[str, int] = {
-    "target_input_refused": 0,
-    "auditor_input_refused": 0,
-    "target_error": 0,
-    "judge_filter_skipped": 0,
-}
 
 
 def _scan_run_artifacts(suite_id: str, run_id: str) -> dict[str, int]:
