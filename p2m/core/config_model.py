@@ -227,6 +227,12 @@ class RunManifest:
     pid: int | None = None
     host: str | None = None
     heartbeat_at: str | None = None
+    # Live progress payload (e.g. {"stage": "rollout", "completed": 423,
+    # "total": 1000}) updated by the ManifestHeartbeat during long stages
+    # so external observers can see real-time progress without parsing
+    # transcripts.jsonl. Cleared between stages and dropped from the
+    # serialized output when None.
+    progress: dict[str, Any] | None = None
     artifact_versions: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:

@@ -1,0 +1,409 @@
+"""Runtime safety: heartbeat + watchdog daemons + bounded stage teardown.
+
+These primitives defend the harness against well-meaning user targets that
+leave background resources open (unclosed ``httpx`` clients, OpenTelemetry
+exporters, etc.). The motivating bug: a multi-agent LangGraph travel-planner
+target leaked an ``AzureChatOpenAI`` (and its inner ``httpx.AsyncClient``) per
+node per scenario; at high concurrency the per-stage ``asyncio.run`` teardown
+deadlocked inside ``loop.shutdown_default_executor`` waiting for worker
+threads stuck in cleanup finalizers, freezing the pipeline between rollout
+and judge.
+
+The three layers exposed here:
+
+* :class:`ManifestHeartbeat` — daemon thread that rewrites
+  ``manifest.heartbeat_at`` (and an optional progress payload) every
+  ``interval_s`` seconds so external observers (``p2m results status``,
+  benchmark dashboards) get an honest liveness signal during long stages.
+* :class:`PipelineWatchdog` — daemon thread that dumps every Python thread's
+  current stack to the log if the pipeline goes silent (no
+  :meth:`tick` call) for longer than ``idle_threshold_s`` seconds, so a hang
+  is self-diagnosing on its next occurrence.
+* :func:`run_stage_coro` — drop-in replacement for ``asyncio.run`` whose
+  teardown is bounded by ``cleanup_timeout_s``; if it exceeds the bound, the
+  custom default executor is detached from the interpreter's atexit join
+  hook and abandoned so the pipeline can move on to the next stage.
+
+All three accept the runtime cost of being slightly defensive: bounded
+cleanup may leave dangling threads (they die at process exit), the watchdog
+may emit a stack dump during a legitimately slow stage, and the heartbeat
+adds one tiny atomic write every 30s. We accept those costs in exchange
+for "the benchmark always finishes" as the harness contract.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import concurrent.futures.thread as _cft
+import logging
+import sys
+import threading
+import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Coroutine, TypeVar
+
+log = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+
+# ---------------------------------------------------------------------------
+# Manifest heartbeat
+# ---------------------------------------------------------------------------
+
+
+class ManifestHeartbeat:
+    """Periodically rewrite the run manifest from a daemon thread.
+
+    The runner only rewrites ``manifest.json`` at stage boundaries, which
+    means during a 90-minute rollout there is no liveness signal at all —
+    ``manifest.heartbeat_at`` can be stale by 1.5 hours while the run is
+    perfectly healthy. This heartbeat fixes that by rewriting the manifest
+    every ``interval_s`` seconds with the current timestamp and an optional
+    progress payload that stages can update (e.g. rollout reports
+    ``{stage: "rollout", completed: 423, total: 1000}``).
+
+    Thread safety:
+
+    * The manifest dataclass is mutated under ``_lock`` so concurrent
+      ``set_progress`` calls don't race with the heartbeat's read.
+    * ``write_json`` performs a temp-file + rename atomic write, so the
+      main runner thread and the heartbeat thread can both call
+      ``write_manifest`` safely (last-write-wins on the bytes; no
+      corruption).
+    """
+
+    def __init__(
+        self,
+        manifest: Any,
+        run_root: Path,
+        write_fn: Callable[[Any, Path], None],
+        *,
+        interval_s: float = 30.0,
+    ) -> None:
+        self._manifest = manifest
+        self._run_root = Path(run_root)
+        self._write_fn = write_fn
+        self._interval_s = max(0.01, float(interval_s))
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._watchdog: PipelineWatchdog | None = None
+
+    def attach_watchdog(self, watchdog: "PipelineWatchdog") -> None:
+        """Have each successful heartbeat tick double as a watchdog tick.
+
+        This means: if the heartbeat thread is alive and writing, the
+        watchdog stays quiet. If the heartbeat thread dies or stops
+        writing (e.g. the manifest write itself wedges), the watchdog
+        eventually fires. Stages can still tick the watchdog directly
+        for finer-grained signals.
+        """
+        self._watchdog = watchdog
+
+    def set_progress(self, **fields: Any) -> None:
+        """Update the progress payload that will be written on the next tick.
+
+        Pass any JSON-serializable keys (``stage``, ``completed``, ``total``,
+        anything else useful). Existing keys are merged; pass ``None`` to
+        leave them. Safe to call from any thread.
+        """
+        if not fields:
+            return
+        with self._lock:
+            current: dict[str, Any] = dict(getattr(self._manifest, "progress", None) or {})
+            for k, v in fields.items():
+                current[k] = v
+            try:
+                setattr(self._manifest, "progress", current)
+            except AttributeError:
+                pass
+
+    def clear_progress(self) -> None:
+        """Reset the progress payload (e.g. between stages)."""
+        with self._lock:
+            try:
+                setattr(self._manifest, "progress", None)
+            except AttributeError:
+                pass
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._loop,
+            name="p2m-heartbeat",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self, *, write_final: bool = False) -> None:
+        if self._thread is None:
+            return
+        self._stop.set()
+        self._thread.join(timeout=5.0)
+        self._thread = None
+        if write_final:
+            self._safe_write()
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self._interval_s):
+            wrote = self._safe_write()
+            if wrote and self._watchdog is not None:
+                self._watchdog.tick()
+
+    def _safe_write(self) -> bool:
+        try:
+            with self._lock:
+                # _write_manifest itself stamps heartbeat_at on every call
+                # when manifest.status == "running"; we just trigger it.
+                self._write_fn(self._manifest, self._run_root)
+            return True
+        except Exception:  # noqa: BLE001 — heartbeat must never raise
+            log.debug("Heartbeat write failed", exc_info=True)
+            return False
+
+
+# ---------------------------------------------------------------------------
+# Pipeline watchdog
+# ---------------------------------------------------------------------------
+
+
+class PipelineWatchdog:
+    """Dump every thread's stack if the pipeline goes silent for too long.
+
+    Purpose: make the *next* hang self-diagnosing. Past hangs forced us to
+    install ``py-spy`` after the fact; with this watchdog wired in, the
+    bench log itself will contain a stack trace of every live thread
+    pointing at the offending wait/lock/syscall.
+
+    Mechanics:
+
+    * Caller ticks via :meth:`tick` to signal "still alive". Stages can
+      tick directly; the :class:`ManifestHeartbeat` is also wired to tick
+      on each successful manifest write.
+    * Every ``check_interval_s`` seconds the watchdog measures wall time
+      since the last tick. If it exceeds ``idle_threshold_s`` and we have
+      not already dumped for this idle period, dump every thread's stack
+      via :func:`sys._current_frames` and emit a warning.
+    * Dumping is idempotent per idle period — a single hang produces one
+      dump, not one per check.
+    """
+
+    def __init__(
+        self,
+        *,
+        idle_threshold_s: float = 600.0,
+        check_interval_s: float = 60.0,
+    ) -> None:
+        self._idle_threshold_s = max(0.01, float(idle_threshold_s))
+        self._check_interval_s = max(0.01, float(check_interval_s))
+        self._last_tick = time.monotonic()
+        self._dumped_for_period = False
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def tick(self) -> None:
+        """Signal liveness. Resets the idle clock."""
+        self._last_tick = time.monotonic()
+        self._dumped_for_period = False
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._loop,
+            name="p2m-watchdog",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._thread is None:
+            return
+        self._stop.set()
+        self._thread.join(timeout=5.0)
+        self._thread = None
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self._check_interval_s):
+            idle = time.monotonic() - self._last_tick
+            if idle > self._idle_threshold_s and not self._dumped_for_period:
+                try:
+                    self._dump_stacks(idle)
+                except Exception:  # noqa: BLE001
+                    log.debug("Watchdog stack dump failed", exc_info=True)
+                self._dumped_for_period = True
+
+    def _dump_stacks(self, idle_seconds: float) -> None:
+        log.warning(
+            "Pipeline watchdog: no liveness tick for %.0fs (threshold %.0fs). "
+            "Dumping all thread stacks to help diagnose where the pipeline is stuck.",
+            idle_seconds, self._idle_threshold_s,
+        )
+        name_by_id = {t.ident: t.name for t in threading.enumerate() if t.ident is not None}
+        frames = sys._current_frames()
+        for thread_id, frame in frames.items():
+            name = name_by_id.get(thread_id, "?")
+            log.warning("--- Thread %s (id=%d) ---", name, thread_id)
+            stack = traceback.format_stack(frame)
+            for line in stack:
+                for sub in line.rstrip().splitlines():
+                    log.warning("    %s", sub)
+
+
+# ---------------------------------------------------------------------------
+# Bounded stage teardown
+# ---------------------------------------------------------------------------
+
+
+def _detach_executor_from_atexit(executor: ThreadPoolExecutor) -> None:
+    """Remove an executor's worker threads from the interpreter's atexit join.
+
+    ``concurrent.futures.thread`` registers an atexit handler that joins all
+    live worker threads on process shutdown. If we are deliberately
+    abandoning an executor whose workers are wedged in finalizers, that
+    handler will hang the process at exit. Removing the threads from
+    ``_threads_queues`` makes the atexit handler skip them. The threads
+    themselves are left to be reaped naturally when the process dies.
+    """
+    try:
+        threads_queues = getattr(_cft, "_threads_queues", None)
+        if threads_queues is None:
+            return
+        for t in list(executor._threads):
+            threads_queues.pop(t, None)
+    except Exception:  # noqa: BLE001
+        log.debug("Failed to detach executor from atexit", exc_info=True)
+
+
+def run_stage_coro(
+    coro: Coroutine[Any, Any, T],
+    *,
+    cleanup_timeout_s: float = 300.0,
+    max_workers: int | None = None,
+) -> T:
+    """Run ``coro`` in a fresh event loop with bounded teardown.
+
+    Drop-in replacement for ``asyncio.run(coro)`` that defends against the
+    most common cause of pipeline hangs: a target callable that leaves
+    background resources open (httpx clients, OTel exporters, etc.). When
+    the coroutine returns, we shut down async generators and the loop's
+    custom default executor inside a daemon thread with a bounded join.
+    If the join exceeds ``cleanup_timeout_s``, the executor is detached
+    from the interpreter's atexit join (so process exit isn't blocked
+    either) and we proceed, logging a clear warning.
+
+    Why a custom executor: by replacing the loop's default executor with
+    one we own, we can detach it on timeout without affecting any other
+    asyncio loop that may run later (the runner runs one of these per
+    stage). The default ``asyncio`` executor is shared across all loops
+    in the process, which makes it impossible to abandon safely.
+
+    Tradeoff: on timeout, worker threads continue running until the
+    process exits. They are daemons-by-effect (detached from atexit), so
+    they cannot block shutdown. They may print "Event loop is closed"
+    tracebacks as their resources are GC'd against the now-defunct loop;
+    the runner's stderr filter already suppresses these.
+    """
+    loop = asyncio.new_event_loop()
+    if max_workers is None:
+        # asyncio's default executor sizing (min(32, cpu_count + 4) since
+        # Python 3.8). We mirror that, capped to a sane upper bound so a
+        # 96-vCPU box doesn't spin up 100 worker threads for a tiny stage.
+        try:
+            import os as _os
+            max_workers = min(64, (_os.cpu_count() or 4) + 4)
+        except Exception:  # noqa: BLE001
+            max_workers = 32
+
+    executor = ThreadPoolExecutor(
+        max_workers=max_workers,
+        thread_name_prefix="p2m-stage-worker",
+    )
+    loop.set_default_executor(executor)
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        _bounded_loop_teardown(loop, executor, cleanup_timeout_s)
+        try:
+            asyncio.set_event_loop(None)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _bounded_loop_teardown(
+    loop: asyncio.AbstractEventLoop,
+    executor: ThreadPoolExecutor,
+    timeout_s: float,
+) -> None:
+    """Run async-gen shutdown, executor shutdown, loop close in a daemon thread.
+
+    If the daemon thread doesn't finish within ``timeout_s`` seconds we
+    abandon it: detach the executor so atexit won't block, log a warning,
+    and return. The pipeline continues to the next stage.
+    """
+    done = threading.Event()
+    err_holder: list[BaseException | None] = [None]
+
+    def _teardown() -> None:
+        try:
+            try:
+                if not loop.is_closed():
+                    loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception as exc:  # noqa: BLE001
+                err_holder[0] = exc
+            try:
+                executor.shutdown(wait=True, cancel_futures=True)
+            except Exception as exc:  # noqa: BLE001
+                err_holder[0] = err_holder[0] or exc
+            try:
+                if not loop.is_closed():
+                    loop.close()
+            except Exception as exc:  # noqa: BLE001
+                err_holder[0] = err_holder[0] or exc
+        finally:
+            done.set()
+
+    teardown_thread = threading.Thread(
+        target=_teardown,
+        name="p2m-stage-teardown",
+        daemon=True,
+    )
+    teardown_thread.start()
+
+    if not done.wait(timeout=timeout_s):
+        # Teardown exceeded its budget. Almost certainly a user-callable
+        # left background work (unclosed httpx.AsyncClient, OTel
+        # BatchSpanProcessor, etc.) that's now wedged in a finalizer
+        # against the closed loop. Detach so process exit isn't blocked
+        # by these threads, log loudly so the user knows their target
+        # is leaking, and move on.
+        _detach_executor_from_atexit(executor)
+        log.warning(
+            "Stage cleanup exceeded %.0fs and was abandoned. "
+            "Likely cause: the target callable left background resources open "
+            "(unclosed httpx clients, OpenTelemetry exporters, or similar) that "
+            "hang in finalizers when the event loop closes. The pipeline will "
+            "continue to the next stage; abandoned worker threads will be reaped "
+            "on process exit. To silence this, explicitly close clients in your "
+            "target (e.g. await client.aclose()) or use a singleton LLM client.",
+            timeout_s,
+        )
+        return
+
+    if err_holder[0] is not None:
+        log.debug("Stage teardown raised: %r", err_holder[0])
+
+
+__all__ = [
+    "ManifestHeartbeat",
+    "PipelineWatchdog",
+    "run_stage_coro",
+]

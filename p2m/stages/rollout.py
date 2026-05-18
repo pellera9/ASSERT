@@ -955,6 +955,7 @@ async def run_rollout(
     strict: bool = False,
     forced: bool = False,
     rewrite_seed_path: bool = True,
+    heartbeat: Any = None,
 ) -> dict[str, Any]:
     """Run all seed rollouts and write the transcript artifact."""
     if not target.model and not target.connector and not target.callable and not target.endpoint:
@@ -1107,6 +1108,16 @@ async def run_rollout(
 
     tasks = [asyncio.create_task(_guard(seed)) for seed in pending_seeds]
     total = len(tasks)
+    # Optional heartbeat hook: the runner injects one so manifest.json can
+    # report live progress every 30s during the rollout. When called from
+    # unit tests or ad-hoc scripts, ``heartbeat`` is None and these calls
+    # become no-ops. We also dynamically demote heartbeat to None on the
+    # first exception so a misbehaving hook can't kill the stage.
+    if heartbeat is not None:
+        try:
+            heartbeat.set_progress(stage="rollout", completed=0, total=total)
+        except Exception:  # noqa: BLE001
+            heartbeat = None
     results = []
     errors: list[Exception] = []
     successful_results = 0
@@ -1136,6 +1147,16 @@ async def run_rollout(
         if error is not None:
             errors.append(error)
         done = len(results)
+        if heartbeat is not None:
+            try:
+                heartbeat.set_progress(
+                    stage="rollout",
+                    completed=done,
+                    total=total,
+                    errors=len(errors),
+                )
+            except Exception:  # noqa: BLE001
+                heartbeat = None
         idx = result["output_index"]
         seed_row = seeds_list[idx]
         kind = seed_row.get("kind", "")
@@ -1275,6 +1296,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
         strict=cfg.get("strict", False),
         forced=bool(ctx.get("_stage_forced", False)),
         rewrite_seed_path=rewrite_seed_path,
+        heartbeat=ctx.get("_heartbeat") if isinstance(ctx, dict) else None,
     )
     target_obj = ctx["target"]
     target_model = ""

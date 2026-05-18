@@ -71,6 +71,7 @@ async def run_judge(
     evaluation: Any,
     judge_dimensions: list[dict[str, Any]] | None = None,
     forced: bool = False,
+    heartbeat: Any = None,
 ) -> dict[str, Any]:
     """Score transcript rows and write score artifacts."""
     judge_model = str(evaluation.judge.model.name)
@@ -301,6 +302,21 @@ async def run_judge(
             return await worker(item)
 
     tasks = [asyncio.create_task(guard(item)) for item in pending]
+    # Optional heartbeat hook: the runner injects one so manifest.json can
+    # report live progress every 30s during scoring. Stages must tolerate
+    # heartbeat being absent (e.g. unit tests, ad-hoc scripts), hence the
+    # defensive None checks.
+    total = len(tasks)
+    cached_count = len(completed_keys)
+    if heartbeat is not None:
+        try:
+            heartbeat.set_progress(
+                stage="judge",
+                completed=cached_count,
+                total=cached_count + total,
+            )
+        except Exception:  # noqa: BLE001
+            heartbeat = None
     errors: list[Exception] = []
     written_rows = 0
     for completed_task in asyncio.as_completed(tasks):
@@ -312,6 +328,16 @@ async def run_judge(
         error = result.get("error")
         if error is not None:
             errors.append(error)
+        if heartbeat is not None:
+            try:
+                heartbeat.set_progress(
+                    stage="judge",
+                    completed=cached_count + written_rows + len(errors),
+                    total=cached_count + total,
+                    errors=len(errors),
+                )
+            except Exception:  # noqa: BLE001
+                heartbeat = None
 
     # Always rebuild viewer artifacts so the on-disk read model reflects the
     # current scores.jsonl, even when a row failed and we are about to raise.
@@ -376,6 +402,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, str]:
         evaluation=ctx["evaluation"],
         judge_dimensions=judge_dimensions,
         forced=bool(ctx.get("_stage_forced", False)),
+        heartbeat=ctx.get("_heartbeat") if isinstance(ctx, dict) else None,
     )
     return {
         "scores_path": result["scores_path"],
