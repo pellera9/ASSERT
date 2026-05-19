@@ -46,6 +46,12 @@ p2m run --config examples/travel_planner_langgraph/eval_config.yaml
 p2m results status travel-planner-langgraph-v1 demo-1
 ```
 
+Codespaces / VS Code Dev Containers:
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/adaptive-eval)
+
+The repo includes a minimal dev container for the LangGraph quickstart. It installs `.[otel,langgraph,dev]`, copies `.env.example` to `.env` if needed, and forwards Phoenix on port `6006`. After the container finishes setup, add your provider credentials to `.env` and run the same `p2m run` command above.
+
 Windows PowerShell equivalent:
 
 ```powershell
