@@ -42,6 +42,7 @@ import sys
 import threading
 import time
 import traceback
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -264,12 +265,59 @@ class PipelineWatchdog:
 # ---------------------------------------------------------------------------
 
 
-def _detach_executor_from_atexit(executor: ThreadPoolExecutor) -> None:
-    """Detach worker threads from BOTH interpreter shutdown joins.
+class _AbandonableThreadPoolExecutor(ThreadPoolExecutor):
+    """ThreadPoolExecutor variant for intentionally abandonable stage work.
 
-    Python waits for non-daemon threads at process exit in two distinct
-    places, and abandoning an executor cleanly requires detaching from
-    both:
+    CPython 3.13+ moved the non-daemon thread join from Python-level
+    ``threading._shutdown_locks`` to a C-level shutdown-handle list. That
+    handle list is not removable from Python, so workers that may need to be
+    abandoned must be daemon threads from the start. Normal teardown still
+    waits for them via ``executor.shutdown(wait=True)``; daemon status only
+    matters if bounded teardown times out and we intentionally abandon the
+    executor.
+    """
+
+    def _adjust_thread_count(self) -> None:
+        # This mirrors CPython's private ThreadPoolExecutor implementation,
+        # except workers are daemon=True so interpreter shutdown does not join
+        # an intentionally abandoned stage worker on Python 3.13+.
+        if self._idle_semaphore.acquire(timeout=0):
+            return
+
+        def weakref_cb(_: weakref.ReferenceType[object], q: Any = self._work_queue) -> None:
+            q.put(None)
+
+        num_threads = len(self._threads)
+        if num_threads >= self._max_workers:
+            return
+
+        thread_name = "%s_%d" % (self._thread_name_prefix or self, num_threads)
+        t = threading.Thread(
+            name=thread_name,
+            target=_cft._worker,
+            args=self._worker_args(weakref.ref(self, weakref_cb)),
+            daemon=True,
+        )
+        t.start()
+        self._threads.add(t)
+        _cft._threads_queues[t] = self._work_queue
+
+    def _worker_args(self, executor_ref: weakref.ReferenceType[object]) -> tuple[Any, ...]:
+        # Python 3.14 changed concurrent.futures.thread._worker from
+        # (executor_ref, work_queue, initializer, initargs) to
+        # (executor_ref, worker_context, work_queue).
+        create_context = getattr(self, "_create_worker_context", None)
+        if create_context is not None:
+            return (executor_ref, create_context(), self._work_queue)
+        return (executor_ref, self._work_queue, self._initializer, self._initargs)
+
+
+def _detach_executor_from_atexit(executor: ThreadPoolExecutor) -> None:
+    """Detach worker threads from interpreter shutdown joins we can reach.
+
+    Python 3.11 and 3.12 wait for non-daemon threads at process exit in two
+    distinct places, and abandoning an executor cleanly requires detaching
+    from both:
 
     1. ``concurrent.futures.thread._python_exit`` (atexit handler) joins
        every worker registered in ``_threads_queues``.
@@ -279,11 +327,10 @@ def _detach_executor_from_atexit(executor: ThreadPoolExecutor) -> None:
     Removing only ``_threads_queues`` is the common pitfall because the
     atexit handler is more obvious — but on Python 3.9+ (where TPE
     workers are non-daemon by default, per CPython issue 39812) the
-    actually-blocking join is ``threading._shutdown``. Detaching from
-    only one of the two joins still hangs the process on exit; verified
-    empirically by leaking a worker, calling :func:`run_stage_coro`, and
-    timing the subprocess exit (see the ``test_run_stage_coro_does_not_
-    block_subprocess_exit_when_worker_leaked`` regression test).
+    actually-blocking join is ``threading._shutdown``. Python 3.13+ moved
+    that second join behind C-level thread handles, which cannot be removed
+    from Python; :class:`_AbandonableThreadPoolExecutor` avoids that newer
+    join path by creating daemon workers up front.
 
     The threads themselves continue to live (and may print "Event loop
     is closed" tracebacks as their resources GC against the closed
@@ -364,7 +411,7 @@ def run_stage_coro(
         except Exception:  # noqa: BLE001
             max_workers = 32
 
-    executor = ThreadPoolExecutor(
+    executor = _AbandonableThreadPoolExecutor(
         max_workers=max_workers,
         thread_name_prefix="p2m-stage-worker",
     )

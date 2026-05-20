@@ -142,6 +142,17 @@ def test_run_stage_coro_clean_shutdown_logs_no_warning(
     ), "clean shutdown should not emit a cleanup warning"
 
 
+def test_run_stage_coro_uses_daemon_workers_for_abandonable_executor() -> None:
+    """Stage executor workers are daemon threads so CPython 3.13+ shutdown
+    does not join them if bounded teardown intentionally abandons the executor.
+    """
+
+    async def _coro() -> bool:
+        return await asyncio.to_thread(lambda: threading.current_thread().daemon)
+
+    assert run_stage_coro(_coro(), cleanup_timeout_s=10.0) is True
+
+
 def test_run_stage_coro_does_not_block_subprocess_exit_when_worker_leaked(
     tmp_path: Path,
 ) -> None:
@@ -153,11 +164,12 @@ def test_run_stage_coro_does_not_block_subprocess_exit_when_worker_leaked(
     ``run_stage_coro`` returns — it then sets ``release.set()`` in
     ``finally`` to let pytest tear down. That hides the more dangerous
     failure mode: Python's interpreter shutdown joins live non-daemon
-    threads in *two* places (``concurrent.futures._python_exit`` AND
-    ``threading._shutdown`` via ``_shutdown_locks``). If
-    ``_detach_executor_from_atexit`` only detaches from
-    ``_threads_queues``, ``threading._shutdown`` still blocks waiting
-    for the leaked worker forever, hanging the whole process.
+    threads through ``concurrent.futures._python_exit`` and through
+    ``threading._shutdown``. Python 3.11/3.12 expose the second join via
+    ``_shutdown_locks``; Python 3.13+ moved it behind C-level thread
+    handles. If the stage executor cannot escape both paths, shutdown
+    still blocks waiting for the leaked worker forever, hanging the whole
+    process.
 
     This test spawns a fresh ``sys.executable`` subprocess that leaks a
     worker via ``run_stage_coro``, prints a sentinel, and then exits.
