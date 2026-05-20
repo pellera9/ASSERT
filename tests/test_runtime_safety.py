@@ -277,7 +277,7 @@ def test_heartbeat_set_progress_merges_and_appears_on_next_write(
         snapshots.append(dict(m.progress) if m.progress else None)
 
     hb = ManifestHeartbeat(manifest, tmp_path, _write, interval_s=0.05)
-    hb.set_progress(stage="rollout", completed=0, total=10)
+    hb.set_progress(stage="inference", completed=0, total=10)
     hb.start()
     try:
         time.sleep(0.1)
@@ -289,7 +289,7 @@ def test_heartbeat_set_progress_merges_and_appears_on_next_write(
     merged = [
         s for s in snapshots
         if s is not None
-        and s.get("stage") == "rollout"
+        and s.get("stage") == "inference"
         and s.get("completed") == 5
         and s.get("total") == 10
         and s.get("errors") == 1
@@ -305,7 +305,7 @@ def test_heartbeat_clear_progress_drops_payload(tmp_path: Path) -> None:
         snapshots.append(dict(m.progress) if m.progress else None)
 
     hb = ManifestHeartbeat(manifest, tmp_path, _write, interval_s=0.05)
-    hb.set_progress(stage="rollout", completed=10, total=10)
+    hb.set_progress(stage="inference", completed=10, total=10)
     hb.start()
     try:
         time.sleep(0.1)

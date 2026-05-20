@@ -6,7 +6,7 @@ exporters, etc.). The motivating bug: a multi-agent LangGraph travel-planner
 target leaked an ``AzureChatOpenAI`` (and its inner ``httpx.AsyncClient``) per
 node per scenario; at high concurrency the per-stage ``asyncio.run`` teardown
 deadlocked inside ``loop.shutdown_default_executor`` waiting for worker
-threads stuck in cleanup finalizers, freezing the pipeline between rollout
+threads stuck in cleanup finalizers, freezing the pipeline between inference
 and judge.
 
 The three layers exposed here:
@@ -61,12 +61,12 @@ class ManifestHeartbeat:
     """Periodically rewrite the run manifest from a daemon thread.
 
     The runner only rewrites ``manifest.json`` at stage boundaries, which
-    means during a 90-minute rollout there is no liveness signal at all —
+    means during a 90-minute inference stage there is no liveness signal at all —
     ``manifest.heartbeat_at`` can be stale by 1.5 hours while the run is
     perfectly healthy. This heartbeat fixes that by rewriting the manifest
     every ``interval_s`` seconds with the current timestamp and an optional
-    progress payload that stages can update (e.g. rollout reports
-    ``{stage: "rollout", completed: 423, total: 1000}``).
+    progress payload that stages can update (e.g. inference reports
+    ``{stage: "inference", completed: 423, total: 1000}``).
 
     Thread safety:
 
