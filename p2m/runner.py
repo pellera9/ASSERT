@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -44,6 +43,11 @@ from p2m.core.model_client import (
     LLMRateLimitError,
     UsageAccumulator,
     track_usage,
+)
+from p2m.core.runtime_safety import (
+    ManifestHeartbeat,
+    PipelineWatchdog,
+    run_stage_coro,
 )
 from p2m.stages import STAGES
 
@@ -514,6 +518,72 @@ def run_pipeline(
     pipeline_start = time.monotonic()
     stage_usage: dict[str, dict[str, Any]] = {}
 
+    # Start the manifest heartbeat + pipeline watchdog as daemon threads.
+    # The heartbeat refreshes manifest.heartbeat_at + progress every 30s
+    # so external observers see live progress during long stages (inference
+    # can be 90+ minutes at high concurrency). The watchdog dumps every
+    # thread's stack to the log if no progress tick fires for 10 minutes,
+    # making the next hang self-diagnosing instead of requiring py-spy.
+    # Both are daemons so they cannot block process exit if the runner
+    # itself errors out before .stop().
+    heartbeat: ManifestHeartbeat | None = None
+    watchdog: PipelineWatchdog | None = None
+    if manifest is not None and run_root is not None:
+        heartbeat = ManifestHeartbeat(
+            manifest,
+            run_root,
+            _write_manifest,
+            interval_s=30.0,
+        )
+        watchdog = PipelineWatchdog(
+            idle_threshold_s=600.0,
+            check_interval_s=60.0,
+        )
+        heartbeat.attach_watchdog(watchdog)
+        ctx["_heartbeat"] = heartbeat
+        ctx["_watchdog"] = watchdog
+        heartbeat.start()
+        watchdog.start()
+
+    try:
+        return _run_stages_inner(
+            ctx=ctx,
+            stages_to_run=stages_to_run,
+            artifact_plans=artifact_plans,
+            requested_force_stages=requested_force_stages,
+            cache_supported=cache_supported,
+            manifest=manifest,
+            run_root=run_root,
+            pipeline_start=pipeline_start,
+            stage_usage=stage_usage,
+            heartbeat=heartbeat,
+            watchdog=watchdog,
+        )
+    finally:
+        if heartbeat is not None:
+            heartbeat.stop(write_final=True)
+        if watchdog is not None:
+            watchdog.stop()
+
+
+def _run_stages_inner(
+    *,
+    ctx: dict[str, Any],
+    stages_to_run: list[tuple[str, Any, dict[str, Any]]],
+    artifact_plans: dict[str, Any],
+    requested_force_stages: set[str],
+    cache_supported: bool,
+    manifest: RunManifest | None,
+    run_root: Path | None,
+    pipeline_start: float,
+    stage_usage: dict[str, dict[str, Any]],
+    heartbeat: ManifestHeartbeat | None,
+    watchdog: PipelineWatchdog | None,
+) -> int:
+    """Stage execution loop. Extracted so the outer function can manage
+    heartbeat/watchdog lifecycle in a single try/finally."""
+    failed_stage: str | None = None
+
     for stage_name, module, raw_cfg in stages_to_run:
         if manifest is not None and module.SCOPE == "run":
             manifest.stages[stage_name] = "running"
@@ -522,6 +592,16 @@ def run_pipeline(
         _print_stage_start(stage_name, ctx, raw_cfg)
         stage_start = time.monotonic()
         stage_result: dict[str, Any] = {}
+        # Tick the watchdog so it doesn't fire mid-stage on the previous
+        # stage's idle clock, and reset the heartbeat's progress payload
+        # so a stage that doesn't report progress (e.g. systematize, test_set)
+        # doesn't leave stale {"stage": "inference", "completed": 1000}
+        # in the manifest.
+        if watchdog is not None:
+            watchdog.tick()
+        if heartbeat is not None:
+            heartbeat.clear_progress()
+            heartbeat.set_progress(stage=stage_name)
         # Pass the per-stage "was this forced" flag through ctx so stages
         # like inference/judge can distinguish a real cache-mismatch warning
         # from a redundant one (the user already opted into discarding via
@@ -531,7 +611,18 @@ def run_pipeline(
         usage_acc: UsageAccumulator | None = None
         try:
             with track_usage() as usage_acc:
-                stage_result = asyncio.run(module.run(ctx, raw_cfg)) or {}
+                # run_stage_coro replaces asyncio.run with bounded teardown:
+                # if the stage's event loop can't shut down its default
+                # executor within 300s (typically because a user target left
+                # background work — unclosed httpx clients, OTel exporters
+                # — wedged in finalizers), we log a warning, detach the
+                # executor from the interpreter's atexit join, and proceed
+                # to the next stage. This is the harness's deadlock defense
+                # against well-meaning but cleanup-imperfect user agents.
+                stage_result = run_stage_coro(
+                    module.run(ctx, raw_cfg),
+                    cleanup_timeout_s=300.0,
+                ) or {}
             stage_errored_count = int(
                 ((stage_result or {}).get("_summary") or {}).get("errored_count", 0) or 0
             )
@@ -595,6 +686,17 @@ def run_pipeline(
             _print_stage_done(stage_name, elapsed, stage_result.get("_summary"), usage_acc)
         else:
             log.error(f"[{stage_name}] \u2717 Failed ({elapsed:.1f}s)")
+
+        # Tick the watchdog now that the stage has returned (success or
+        # fail). The stage may have been silent for the entire 300s
+        # bounded-cleanup wait; without this tick the watchdog would fire
+        # spuriously on the *next* stage's startup. We also clear the
+        # heartbeat's progress payload so it doesn't leak past the stage
+        # that owned it.
+        if watchdog is not None:
+            watchdog.tick()
+        if heartbeat is not None:
+            heartbeat.clear_progress()
 
         if manifest is not None and module.SCOPE == "run":
             manifest.stages[stage_name] = "completed" if ok else "failed"

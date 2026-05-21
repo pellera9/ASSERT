@@ -105,7 +105,7 @@ def _inference_config_fingerprint(
     Includes the test set input file's content hash when provided so that
     regenerated test_set invalidate the cached inference rows. Without this,
     test case ids are deterministic enough that the resume path silently
-    reuses transcripts from a prior test_set.jsonl content.
+    reuses inference rows from prior test_set.jsonl content.
     """
     target_name = target.model.name if isinstance(target.model, ModelConfig) else (target.connector or target.callable or target.endpoint or "")
     test_set_sha = ""
@@ -711,7 +711,7 @@ async def _run_tester_target_loop(
                 # system prompt is jailbreak-shaped by design and reliably
                 # trips Prompt Shields on a small fraction of test_set. This
                 # is per-test-case data, not a global pipeline error: a different
-                # seed will lead the tester down a different path and
+                # test case will lead the tester down a different path and
                 # complete normally. Record the refusal in the transcript
                 # and stop the conversation cleanly so the worker can move
                 # on. (Absorbed from PR #44 commit f265154.)
@@ -955,6 +955,7 @@ async def run_inference(
     config_path: Path | None = None,
     strict: bool = False,
     forced: bool = False,
+    heartbeat: Any = None,
     rewrite_test_set_path: bool = True,
 ) -> dict[str, Any]:
     """Run all test-case inferences and write the transcript artifact."""
@@ -1108,6 +1109,16 @@ async def run_inference(
 
     tasks = [asyncio.create_task(_guard(test_case)) for test_case in pending_test_cases]
     total = len(tasks)
+    # Optional heartbeat hook: the runner injects one so manifest.json can
+    # report live progress every 30s during inference. When called from
+    # unit tests or ad-hoc scripts, ``heartbeat`` is None and these calls
+    # become no-ops. We also dynamically demote heartbeat to None on the
+    # first exception so a misbehaving hook can't kill the stage.
+    if heartbeat is not None:
+        try:
+            heartbeat.set_progress(stage="inference", completed=0, total=total)
+        except Exception:  # noqa: BLE001
+            heartbeat = None
     results = []
     errors: list[Exception] = []
     successful_results = 0
@@ -1137,6 +1148,16 @@ async def run_inference(
         if error is not None:
             errors.append(error)
         done = len(results)
+        if heartbeat is not None:
+            try:
+                heartbeat.set_progress(
+                    stage="inference",
+                    completed=done,
+                    total=total,
+                    errors=len(errors),
+                )
+            except Exception:  # noqa: BLE001
+                heartbeat = None
         idx = result["output_index"]
         test_case_row = test_cases[idx]
         kind = test_case_row.get("type", "")
@@ -1161,7 +1182,7 @@ async def run_inference(
     # produced useful inference rows. The errors are visible in the
     # per-test-case progress lines above and are summarised in errored_count
     # below. The stage only fails outright when nothing succeeded
-    # (no useful transcripts in this run AND no cached inference rows from
+    # (no useful inference rows in this run AND no cached inference rows from
     # a prior run) — that means the failure is systemic (auth, config,
     # broken target) rather than per-row.
     if successful_results == 0 and not completed_test_case_ids:
@@ -1258,7 +1279,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
         artifacts_root=ctx["artifacts_root"],
     )
     test_set_artifact_ref = (ctx.get("artifact_versions") or {}).get("test_set")
-    # Only rewrite the seed file when there is no cached artifact to protect.
+    # Only rewrite the test_set file when there is no cached artifact to protect.
     # If the user supplied an explicit test_set_path AND we have no cache ref, we
     # still want the canonicalization pass to normalize their input file.
     rewrite_test_set_path = not isinstance(test_set_artifact_ref, dict)
@@ -1272,6 +1293,7 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
         config_path=ctx["config_path"],
         strict=cfg.get("strict", False),
         forced=bool(ctx.get("_stage_forced", False)),
+        heartbeat=ctx.get("_heartbeat") if isinstance(ctx, dict) else None,
         rewrite_test_set_path=rewrite_test_set_path,
     )
     target_obj = ctx["target"]
