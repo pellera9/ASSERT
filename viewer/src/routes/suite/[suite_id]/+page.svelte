@@ -288,7 +288,7 @@
 	<div class="mt-5 flex w-full items-start gap-4">
 		<div class="min-w-0 flex-1">
 			<div class="text-[12px] font-medium text-text-muted">Behavior name</div>
-			<h1 class="text-2xl font-semibold leading-tight text-text" style="margin-top:2px;">{conceptName}</h1>
+			<h1 class="break-words text-2xl font-semibold leading-tight text-text" style="margin-top:2px;" title={conceptName}>{conceptName}</h1>
 			<div class="mt-1.5 flex flex-wrap items-center gap-2">
 				<span class="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 font-mono text-xs text-text-muted">
 					<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
@@ -597,7 +597,7 @@
 			<div class="sticky top-0 z-10 border-b border-border bg-surface">
 				<div class="px-5 py-3">
 				<div class="flex items-start justify-between gap-3">
-					<h3 class="min-w-0 text-[16px] font-semibold leading-snug text-text line-clamp-2">{selectedBehaviorData.name}</h3>
+					<h3 class="min-w-0 break-words text-[16px] font-semibold leading-snug text-text line-clamp-2" title={selectedBehaviorData.name}>{selectedBehaviorData.name}</h3>
 					<button onclick={closeSidePanel} class="rounded p-1 text-text-muted transition-colors hover:bg-surface-2 hover:text-text" title="Close panel">
 						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"/></svg>
 					</button>

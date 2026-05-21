@@ -22,18 +22,13 @@
 		{ id: 3, label: 'Summary & submit' }
 	] as const;
 
-	const FALLBACK_MODEL_OPTIONS = [
-		'openai/gpt-5.2',
-		'openai/gpt-4.1',
-		'openai/gpt-4.1-mini',
-		'openai/gpt-4.1-nano',
-		'openai/o3',
-		'openai/o4-mini'
-	] as const;
-
-	// Populated from /api/models on mount; defaults to the fallback list so the
-	// wizard remains usable on a fresh install with no model env vars configured.
-	let modelOptions = $state<string[]>([...FALLBACK_MODEL_OPTIONS]);
+	// Populated from /api/models on mount. Starts empty so the wizard's model
+	// dropdowns only list models the operator has actually configured via
+	// .env (P2M_MODEL_OPTIONS, OPENAI_MODEL, AZURE_OPENAI_DEPLOYMENT, ...).
+	// Each <select> also exposes a "+ Add custom model…" option that prompts
+	// the user for an arbitrary LiteLLM-compatible "provider/model" string
+	// and appends it to the catalog for the rest of the session.
+	let modelOptions = $state<string[]>([]);
 
 	interface ModelCatalogResponse {
 		models?: { id?: string }[];
@@ -185,9 +180,8 @@
 		const envModels = (catalog.models ?? [])
 			.map((m) => m?.id)
 			.filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
-		if (envModels.length === 0) return;
-
 		modelOptions = uniqueStrings(envModels);
+		if (modelOptions.length === 0) return;
 		const desired =
 			catalog.defaultModel && modelOptions.includes(catalog.defaultModel)
 				? catalog.defaultModel
@@ -220,6 +214,37 @@
 			tester: { ...scenarioEvalConfig.tester, model },
 			judge: { ...scenarioEvalConfig.judge, model }
 		};
+	}
+
+	// Sentinel value used by the model <select> dropdowns to expose an
+	// "+ Add model" entry. Picking it opens a prompt for an arbitrary model id,
+	// appends it to `modelOptions`, and applies it to the field.
+	const ADD_CUSTOM_MODEL = '__add_custom_model__';
+
+	function handleModelChange(
+		event: Event & { currentTarget: HTMLSelectElement },
+		currentValue: string,
+		apply: (model: string) => void
+	) {
+		const value = event.currentTarget.value;
+		if (value === ADD_CUSTOM_MODEL) {
+			const raw = window.prompt(
+				'Enter a model id (e.g., openai/gpt-4o-mini, azure/my-deployment).'
+			);
+			const custom = raw?.trim() ?? '';
+			if (!custom) {
+				event.currentTarget.value = currentValue;
+				return;
+			}
+			if (!modelOptions.includes(custom)) {
+				modelOptions = [...modelOptions, custom];
+			}
+			apply(custom);
+			markDirty();
+			return;
+		}
+		apply(value);
+		markDirty();
 	}
 
 	// ── Derived ─────────────────────────────────────────────────────
@@ -473,6 +498,20 @@
 	}
 </script>
 
+<!--
+	Shared dropdown for any model field in the wizard. Renders Soo's compact
+	`form-select` style with one <option> per model. The current value is
+	hoisted so a pre-filled default that isn't in the env catalog still shows,
+	and a final "+ Add model" entry opens a prompt for a custom id.
+-->
+{#snippet modelSelect(id: string, currentValue: string, apply: (model: string) => void)}
+	{@const opts = Array.from(new Set([currentValue, ...modelOptions].filter(Boolean)))}
+	<select {id} class="form-select w-full text-sm" value={currentValue} onchange={(e) => handleModelChange(e, currentValue, apply)}>
+		{#each opts as opt}<option value={opt}>{opt}</option>{/each}
+		<option value={ADD_CUSTOM_MODEL}>+ Add model</option>
+	</select>
+{/snippet}
+
 <!-- Breadcrumb -->
 <nav class="mb-4" aria-label="Breadcrumb">
 	<ol class="Breadcrumb">
@@ -608,12 +647,17 @@
 						<input
 							id="new-behavior-name"
 							type="text"
+							maxlength="150"
 							class="form-control w-full text-sm {step1Touched && !newBehavior.name.trim() ? 'border-score-fail' : ''}"
 							placeholder="e.g., Harmful content generation"
 							value={newBehavior.name}
 							oninput={(e) => { newBehavior = { ...newBehavior, name: e.currentTarget.value }; step1Touched = true; markDirty(); }}
 						/>
-						{#if step1Touched && !newBehavior.name.trim()}<p class="mt-1 text-xs text-score-fail">Name is required.</p>{/if}
+						{#if step1Touched && !newBehavior.name.trim()}
+							<p class="mt-1 text-xs text-score-fail">Name is required.</p>
+						{:else if newBehavior.name.length > 120}
+							<p class="mt-1 text-xs text-text-muted">{newBehavior.name.length} / 150 characters</p>
+						{/if}
 					</div>
 					<div>
 						<label for="new-behavior-definition" class="mb-1 block text-xs font-semibold text-text-secondary">Definition <span class="text-score-fail">*</span></label>
@@ -836,11 +880,11 @@
 												{#each filteredSuites as s}
 													<li class="ActionList-item" role="option" aria-selected="false">
 														<button class="ActionList-content w-full text-left" onclick={() => { selectedSuite = s; suiteSearch = s.behavior_name; showSuiteDropdown = false; markDirty(); }}>
-															<span class="block">
-																<span class="text-sm font-medium text-text">{s.behavior_name}</span>
-																<span class="mt-0.5 block text-xs text-text-muted">{s.suite_id} · {s.behavior_category_count} categories</span>
-															</span>
-														</button>
+														<span class="block min-w-0">
+															<span class="block break-words text-sm font-medium text-text">{s.behavior_name}</span>
+															<span class="mt-0.5 block break-words text-xs text-text-muted">{s.suite_id} · {s.behavior_category_count} categories</span>
+														</span>
+													</button>
 													</li>
 												{/each}
 											</ul>
@@ -850,11 +894,11 @@
 							</div>
 							{#if selectedSuite}
 								<div class="rounded-md border border-border bg-bg p-4">
-									<div class="mb-2 flex items-center justify-between">
-										<span class="text-sm font-semibold text-text">{selectedSuite.behavior_name}</span>
-										<button class="text-xs text-interactive hover:underline" onclick={() => { selectedSuite = null; suiteSearch = ''; }}>Clear</button>
+									<div class="mb-2 flex items-start justify-between gap-3">
+										<span class="min-w-0 break-words text-sm font-semibold text-text">{selectedSuite.behavior_name}</span>
+										<button class="shrink-0 text-xs text-interactive hover:underline" onclick={() => { selectedSuite = null; suiteSearch = ''; }}>Clear</button>
 									</div>
-									<p class="text-xs text-text-muted">{selectedSuite.suite_id} · {selectedSuite.behavior_category_count} behavior categories</p>
+									<p class="break-words text-xs text-text-muted">{selectedSuite.suite_id} · {selectedSuite.behavior_category_count} behavior categories</p>
 								</div>
 							{/if}
 							{#if showSuiteDropdown}
@@ -896,9 +940,7 @@
 										<div class="mt-3 grid gap-3" style="max-width: 560px; grid-template-columns: 1.8fr 1fr 1fr 1fr;">
 											<div>
 												<label for="tax-model" class="mb-0.5 block text-[10px] text-text-muted">Model</label>
-												<select id="tax-model" class="form-select w-full text-sm" value={systematizeConfig.model} onchange={(e) => { systematizeConfig = { ...systematizeConfig, model: e.currentTarget.value }; markDirty(); }}>
-													{#each modelOptions as m}<option value={m}>{m}</option>{/each}
-												</select>
+												{@render modelSelect('tax-model', systematizeConfig.model, (v) => (systematizeConfig = { ...systematizeConfig, model: v }))}
 											</div>
 											<div>
 												<label for="tax-budget" class="mb-0.5 block text-[10px] text-text-muted">Categories</label>
@@ -961,9 +1003,7 @@
 									<div class="mt-3 grid gap-3" style="max-width: 560px; grid-template-columns: 1.8fr 1fr 1fr 1fr;">
 										<div>
 											<label for="qs-model" class="mb-0.5 block text-[10px] text-text-muted">Model</label>
-											<select id="qs-model" class="form-select w-full text-sm" value={promptTestCasesConfig.model} onchange={(e) => { promptTestCasesConfig = { ...promptTestCasesConfig, model: e.currentTarget.value }; markDirty(); }}>
-												{#each modelOptions as m}<option value={m}>{m}</option>{/each}
-											</select>
+											{@render modelSelect('qs-model', promptTestCasesConfig.model, (v) => (promptTestCasesConfig = { ...promptTestCasesConfig, model: v }))}
 										</div>
 										<div>
 											<label for="qs-budget" class="mb-0.5 block text-[10px] text-text-muted">Budget</label>
@@ -1071,15 +1111,11 @@
 									<div class="mt-3 grid grid-cols-2 gap-3" style="max-width: 360px;">
 										<div>
 											<label for="pe-target" class="mb-0.5 block text-[10px] text-text-muted">Target model</label>
-											<select id="pe-target" class="form-select w-full text-sm" value={promptEvalConfig.targetModel} onchange={(e) => { promptEvalConfig = { ...promptEvalConfig, targetModel: e.currentTarget.value }; markDirty(); }}>
-												{#each modelOptions as m}<option value={m}>{m}</option>{/each}
-											</select>
+											{@render modelSelect('pe-target', promptEvalConfig.targetModel, (v) => (promptEvalConfig = { ...promptEvalConfig, targetModel: v }))}
 										</div>
 										<div>
 											<label for="pe-judge" class="mb-0.5 block text-[10px] text-text-muted">Judge model</label>
-											<select id="pe-judge" class="form-select w-full text-sm" value={promptEvalConfig.judgeModel} onchange={(e) => { promptEvalConfig = { ...promptEvalConfig, judgeModel: e.currentTarget.value }; markDirty(); }}>
-												{#each modelOptions as m}<option value={m}>{m}</option>{/each}
-											</select>
+											{@render modelSelect('pe-judge', promptEvalConfig.judgeModel, (v) => (promptEvalConfig = { ...promptEvalConfig, judgeModel: v }))}
 										</div>
 									</div>
 								{/if}
@@ -1143,9 +1179,7 @@
 										<div class="grid grid-cols-4 gap-3">
 											<div>
 												<label for="as-model" class="mb-0.5 block text-[10px] text-text-muted">Model</label>
-												<select id="as-model" class="form-select w-full text-sm" value={scenarioTestCasesConfig.model} onchange={(e) => { scenarioTestCasesConfig = { ...scenarioTestCasesConfig, model: e.currentTarget.value }; markDirty(); }}>
-													{#each modelOptions as m}<option value={m}>{m}</option>{/each}
-												</select>
+												{@render modelSelect('as-model', scenarioTestCasesConfig.model, (v) => (scenarioTestCasesConfig = { ...scenarioTestCasesConfig, model: v }))}
 											</div>
 											<div>
 												<label for="as-budget" class="mb-0.5 block text-[10px] text-text-muted">Budget</label>
@@ -1234,9 +1268,7 @@
 											<div class="grid gap-3" style="grid-template-columns: minmax(220px, 1.6fr) 1fr 1fr;">
 												<div>
 													<label for="se-target-model" class="mb-0.5 block text-[10px] text-text-muted">Model</label>
-													<select id="se-target-model" class="form-select w-full text-sm" value={scenarioEvalConfig.target.model} onchange={(e) => { scenarioEvalConfig = { ...scenarioEvalConfig, target: { ...scenarioEvalConfig.target, model: e.currentTarget.value } }; markDirty(); }}>
-														{#each modelOptions as m}<option value={m}>{m}</option>{/each}
-													</select>
+													{@render modelSelect('se-target-model', scenarioEvalConfig.target.model, (v) => (scenarioEvalConfig = { ...scenarioEvalConfig, target: { ...scenarioEvalConfig.target, model: v } }))}
 												</div>
 												<div>
 													<label for="se-target-temp" class="mb-0.5 block text-[10px] text-text-muted">Temperature</label>
@@ -1253,9 +1285,7 @@
 											<div class="grid gap-3" style="grid-template-columns: minmax(220px, 1.6fr) 1fr 1fr;">
 												<div>
 													<label for="se-tester-model" class="mb-0.5 block text-[10px] text-text-muted">Model</label>
-													<select id="se-tester-model" class="form-select w-full text-sm" value={scenarioEvalConfig.tester.model} onchange={(e) => { scenarioEvalConfig = { ...scenarioEvalConfig, tester: { ...scenarioEvalConfig.tester, model: e.currentTarget.value } }; markDirty(); }}>
-														{#each modelOptions as m}<option value={m}>{m}</option>{/each}
-													</select>
+													{@render modelSelect('se-tester-model', scenarioEvalConfig.tester.model, (v) => (scenarioEvalConfig = { ...scenarioEvalConfig, tester: { ...scenarioEvalConfig.tester, model: v } }))}
 												</div>
 												<div>
 													<label for="se-tester-temp" class="mb-0.5 block text-[10px] text-text-muted">Temperature</label>
@@ -1272,9 +1302,7 @@
 											<div class="grid gap-3" style="grid-template-columns: minmax(220px, 1.6fr) 1fr 1fr 1fr;">
 												<div>
 													<label for="se-judge-model" class="mb-0.5 block text-[10px] text-text-muted">Model</label>
-													<select id="se-judge-model" class="form-select w-full text-sm" value={scenarioEvalConfig.judge.model} onchange={(e) => { scenarioEvalConfig = { ...scenarioEvalConfig, judge: { ...scenarioEvalConfig.judge, model: e.currentTarget.value } }; markDirty(); }}>
-														{#each modelOptions as m}<option value={m}>{m}</option>{/each}
-													</select>
+													{@render modelSelect('se-judge-model', scenarioEvalConfig.judge.model, (v) => (scenarioEvalConfig = { ...scenarioEvalConfig, judge: { ...scenarioEvalConfig.judge, model: v } }))}
 												</div>
 												<div>
 													<label for="se-judge-temp" class="mb-0.5 block text-[10px] text-text-muted">Temperature</label>
@@ -1341,20 +1369,38 @@
 				<div class="mb-6">
 					<h3 class="mb-3 text-base font-semibold text-text">Summary</h3>
 					<div class="space-y-2.5 rounded-md border border-border bg-bg p-4 text-sm">
-						<div class="flex justify-between"><span class="text-text-muted">Risk</span><span class="font-medium text-text">{summaryRisk}</span></div>
+						<div class="flex items-baseline justify-between gap-3">
+							<span class="shrink-0 text-text-muted">Risk</span>
+							<span class="min-w-0 break-words text-right font-medium text-text">{summaryRisk}</span>
+						</div>
 						{#if applicationContext.trim()}
-							<div><span class="mb-0.5 block text-text-muted">Application context</span><span class="whitespace-pre-wrap text-text">{applicationContext.trim()}</span></div>
+							<div><span class="mb-0.5 block text-text-muted">Application context</span><span class="block whitespace-pre-wrap break-words text-text">{applicationContext.trim()}</span></div>
 						{/if}
 						{#if evaluationTarget === 'model' && systemPrompt.trim()}
-							<div><span class="mb-0.5 block text-text-muted">System prompt</span><span class="whitespace-pre-wrap text-text">{systemPrompt.trim()}</span></div>
+							<div><span class="mb-0.5 block text-text-muted">System prompt</span><span class="block whitespace-pre-wrap break-words text-text">{systemPrompt.trim()}</span></div>
 						{/if}
-						<div class="flex justify-between"><span class="text-text-muted">Taxonomy</span><span class="font-medium text-text">{summaryTaxonomy}</span></div>
-						<div class="flex justify-between"><span class="text-text-muted">Measurement suite</span><span class="font-medium text-text">{suiteId.trim() || '(new)'}</span></div>
-						<div class="flex justify-between"><span class="text-text-muted">Run</span><span class="font-medium text-text">{runId.trim() || 'v1'}</span></div>
+						<div class="flex items-baseline justify-between gap-3">
+							<span class="shrink-0 text-text-muted">Taxonomy</span>
+							<span class="min-w-0 break-words text-right font-medium text-text">{summaryTaxonomy}</span>
+						</div>
+						<div class="flex items-baseline justify-between gap-3">
+							<span class="shrink-0 text-text-muted">Measurement suite</span>
+							<span class="min-w-0 break-words text-right font-medium text-text">{suiteId.trim() || '(new)'}</span>
+						</div>
+						<div class="flex items-baseline justify-between gap-3">
+							<span class="shrink-0 text-text-muted">Run</span>
+							<span class="min-w-0 break-words text-right font-medium text-text">{runId.trim() || 'v1'}</span>
+						</div>
 						{#if step2Source === 'new'}
-							<div class="flex justify-between"><span class="text-text-muted">Query pipeline</span><span class="font-medium text-text">{summaryTestCasesPipeline}</span></div>
+							<div class="flex items-baseline justify-between gap-3">
+								<span class="shrink-0 text-text-muted">Query pipeline</span>
+								<span class="min-w-0 break-words text-right font-medium text-text">{summaryTestCasesPipeline}</span>
+							</div>
 							{#if scenarioTestCasesEnabled || scenarioEvalEnabled}
-								<div class="flex justify-between"><span class="text-text-muted">Audit pipeline</span><span class="font-medium text-text">{summaryScenarioPipeline}</span></div>
+								<div class="flex items-baseline justify-between gap-3">
+									<span class="shrink-0 text-text-muted">Audit pipeline</span>
+									<span class="min-w-0 break-words text-right font-medium text-text">{summaryScenarioPipeline}</span>
+								</div>
 							{/if}
 						{/if}
 					</div>
@@ -1366,11 +1412,11 @@
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<label for="suite-id" class="mb-1 block text-xs font-semibold text-text-secondary">Measurement suite ID</label>
-							<input id="suite-id" type="text" class="form-control w-full text-sm" placeholder="Auto-generated if blank" value={suiteId} oninput={(e) => { suiteId = e.currentTarget.value; markDirty(); }} disabled={submitting} />
+							<input id="suite-id" type="text" maxlength="150" class="form-control w-full text-sm" placeholder="Auto-generated if blank" value={suiteId} oninput={(e) => { suiteId = e.currentTarget.value; markDirty(); }} disabled={submitting} />
 						</div>
 						<div>
 							<label for="run-id" class="mb-1 block text-xs font-semibold text-text-secondary">Run ID <span class="text-score-fail">*</span></label>
-							<input id="run-id" type="text" class="form-control w-full text-sm {!runId.trim() ? 'border-score-fail' : ''}" placeholder="e.g., v1" value={runId} oninput={(e) => { runId = e.currentTarget.value; markDirty(); }} disabled={submitting} />
+							<input id="run-id" type="text" maxlength="150" class="form-control w-full text-sm {!runId.trim() ? 'border-score-fail' : ''}" placeholder="e.g., v1" value={runId} oninput={(e) => { runId = e.currentTarget.value; markDirty(); }} disabled={submitting} />
 							{#if !runId.trim()}<p class="mt-1 text-xs text-score-fail">Run ID is required.</p>{/if}
 						</div>
 					</div>

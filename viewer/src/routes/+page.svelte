@@ -199,7 +199,11 @@
 						<span>{sc.icon}</span> {sc.label}
 					</span>
 				</div>
-				<a href="/suite/{suite.suite_id}" class="card-heading mt-1 block text-base font-semibold text-text no-underline">
+				<a
+					href="/suite/{suite.suite_id}"
+					title={suite.behavior_name}
+					class="card-heading mt-1 block break-words text-base font-semibold leading-tight text-text no-underline line-clamp-2"
+				>
 					{suite.behavior_name}
 				</a>
 				<div class="mt-4 grid grid-cols-3 gap-2 rounded-md bg-surface py-2">
@@ -242,8 +246,12 @@
 				{#each paginatedList as suite}
 					{@const sc = statusConfig[suite.status] ?? statusConfig.policy_only}
 					<tr class="border-b border-border transition-colors last:border-b-0 hover:bg-surface">
-						<td class="px-4 py-2.5 align-middle">
-							<a href="/suite/{suite.suite_id}" class="card-heading mt-1.5 block text-base font-semibold text-text no-underline hover:text-interactive hover:underline">{suite.behavior_name}</a>
+						<td class="max-w-xs px-4 py-2.5 align-middle">
+							<a
+								href="/suite/{suite.suite_id}"
+								title={suite.behavior_name}
+								class="card-heading mt-1.5 block break-words text-base font-semibold leading-tight text-text no-underline line-clamp-2 hover:text-interactive hover:underline"
+							>{suite.behavior_name}</a>
 							<p class="truncate font-mono text-[10px] text-text-muted" style="margin:0 0 6px;">{suite.suite_id}</p>
 						</td>
 						<td class="px-4 py-2.5 align-middle text-sm text-text-muted">{suite.created_at ? new Date(suite.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}</td>
