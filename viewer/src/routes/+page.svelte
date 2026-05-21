@@ -17,6 +17,16 @@
 		has_results: { icon: '◉', label: 'Has Evaluation Result', class: 'text-score-pass' }
 	};
 
+	// Each pipeline stage is inclusive of the prior stages, so filtering by
+	// "Behavior Categories Defined" should also surface suites that have
+	// progressed further (test_set_ready, has_results) — they completed that
+	// step too. Status rank gives us a single "≥" comparison.
+	const statusRank: Record<string, number> = {
+		systematized: 1,
+		test_set_ready: 2,
+		has_results: 3
+	};
+
 	let filtered = $derived.by(() => {
 		let items = data.suites;
 		if (search) {
@@ -25,7 +35,10 @@
 				(s) => s.suite_id.toLowerCase().includes(q) || s.behavior_name.toLowerCase().includes(q)
 			);
 		}
-		if (statusFilter !== 'all') items = items.filter((s) => s.status === statusFilter);
+		if (statusFilter !== 'all') {
+			const minRank = statusRank[statusFilter] ?? 0;
+			items = items.filter((s) => (statusRank[s.status] ?? 0) >= minRank);
+		}
 		items = [...items].sort((a, b) => {
 			if (sortBy === 'newest') return (b.created_at ?? '').localeCompare(a.created_at ?? '');
 			if (sortBy === 'oldest') return (a.created_at ?? '').localeCompare(b.created_at ?? '');
