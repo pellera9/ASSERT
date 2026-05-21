@@ -189,7 +189,7 @@
 	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 		{#each filtered as suite (suite.suite_id)}
 			{@const sc = statusConfig[suite.status] ?? statusConfig.policy_only}
-			<div class="card-hover group rounded-lg border border-border bg-surface p-4 no-underline">
+			<div class="card-hover group relative rounded-lg border border-border bg-surface p-4 no-underline">
 				<div class="flex items-start justify-between gap-3">
 					<p class="min-w-0 flex-1 flex items-center gap-1.5 pt-0.5 font-mono text-[10px] uppercase leading-4 tracking-wider text-text-muted">
 						<svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
@@ -202,11 +202,11 @@
 				<a
 					href="/suite/{suite.suite_id}"
 					title={suite.behavior_name}
-					class="card-heading mt-1 block break-words text-base font-semibold leading-tight text-text no-underline line-clamp-2"
+					class="card-heading mt-1 block break-words text-base font-semibold leading-tight text-text no-underline line-clamp-2 after:absolute after:inset-0 after:content-['']"
 				>
 					{suite.behavior_name}
 				</a>
-				<div class="mt-4 grid grid-cols-3 gap-2 rounded-md bg-surface py-2">
+				<div class="relative z-10 mt-4 grid grid-cols-3 gap-2 rounded-md bg-surface py-2">
 					<a href="/suite/{suite.suite_id}?section=policy" class="no-underline hover:text-interactive">
 						<div class="text-[10px] text-text-muted">Behavior categories</div>
 						<div class="mt-1 text-sm text-text-secondary">{suite.behavior_category_count}</div>
