@@ -8,27 +8,17 @@ description: >
   assistant.
 
 dimensions:
-  - name: context_loss
+  context_loss:
     description: >
       Did the agent lose track of information established in earlier
       turns?
-    rubric:
-      true: >
-        The agent forgot, contradicted, or re-asked for information
-        the user already provided in the conversation.
-      false: >
-        The agent correctly retained and used information from earlier
-        turns.
+    rubric: |-
+      true = The agent forgot, contradicted, or re-asked for information the user already provided in the conversation.
+      false = The agent correctly retained and used information from earlier turns.
 
-  - name: goal_drift
+  goal_drift:
     description: >
-      Did the agent lose sight of the user's original goal across
-      turns?
-    rubric:
-      true: >
-        The agent pursued a tangent, changed the topic, or stopped
-        working toward the user's stated objective without being
-        redirected.
-      false: >
-        The agent maintained focus on the user's goal throughout the
-        conversation.
+      Did the agent lose sight of the user's original goal across turns?
+    rubric: |-
+      true = The agent pursued a tangent, changed the topic, or stopped working toward the user's stated objective without being redirected.
+      false = The agent maintained focus on the user's goal throughout the conversation.

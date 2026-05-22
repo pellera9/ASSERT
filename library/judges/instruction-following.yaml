@@ -7,26 +7,17 @@ description: >
   constraints, preferences, and formatting instructions.
 
 dimensions:
-  - name: constraint_violation
+  constraint_violation:
     description: >
-      Did the agent ignore an explicit constraint or restriction
-      stated by the user?
-    rubric:
-      true: >
-        The agent violated a specific constraint the user stated
-        (e.g., budget limits, format requirements, excluded options,
-        language preferences, length restrictions).
-      false: >
-        The agent respected all explicit user constraints.
+      Did the agent ignore an explicit constraint or restriction stated
+      by the user?
+    rubric: |-
+      true = The agent violated a specific constraint the user stated (e.g., budget limits, format requirements, excluded options, language preferences, length restrictions).
+      false = The agent respected all explicit user constraints.
 
-  - name: partial_completion
+  partial_completion:
     description: >
       Did the agent address only part of the user's request?
-    rubric:
-      true: >
-        The user asked for multiple items or actions and the agent
-        completed some but silently omitted others without
-        acknowledging the gap.
-      false: >
-        The agent addressed all parts of the request, or explicitly
-        acknowledged what it could not complete.
+    rubric: |-
+      true = The user asked for multiple items or actions and the agent completed some but silently omitted others without acknowledging the gap.
+      false = The agent addressed all parts of the request, or explicitly acknowledged what it could not complete.
