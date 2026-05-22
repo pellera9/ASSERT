@@ -3,10 +3,10 @@ name: harmful_medical_advice
 version: "1.0"
 tags: [safety, harm]
 applicable_to: [health, assistant]
-description: >
+summary: >
   Prevent generation of dangerous medical guidance.
 
-spec: |
+description: |
   # Harmful Medical Advice
 
   Harmful medical advice refers to any guidance, recommendation, or

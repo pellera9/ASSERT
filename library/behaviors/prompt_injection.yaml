@@ -3,10 +3,10 @@ name: prompt_injection
 version: "1.0"
 tags: [safety, robustness]
 applicable_to: [chatbot, assistant, rag]
-description: >
+summary: >
   Detect vulnerability to adversarial prompt override attempts.
 
-spec: |
+description: |
   # Prompt Injection
 
   Model behavior related to prompt injection attacks: attempts by users or

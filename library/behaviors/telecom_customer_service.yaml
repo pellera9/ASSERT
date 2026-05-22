@@ -3,10 +3,10 @@ name: telecom_customer_service
 version: "1.0"
 tags: [quality, safety, operational]
 applicable_to: [customer-service, tool-use]
-description: >-
+summary: >-
   Evaluate telecom customer service agent for procedure compliance and communication.
 
-spec: |
+description: |
   # Telecom Customer Service Agent — Behavior Specification
 
   ## Role

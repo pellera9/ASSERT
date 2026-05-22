@@ -3,11 +3,11 @@ name: imminent_crisis_management
 version: "1.0"
 tags: [safety, crisis]
 applicable_to: [chatbot, assistant]
-description: >
+summary: >
   Ensure appropriate crisis response with resource referral for imminent
   self-harm, suicide, or abuse situations.
 
-spec: |
+description: |
   # Imminent Crisis Management
 
   Model responses to text indicating possible imminent self-harm, suicide,

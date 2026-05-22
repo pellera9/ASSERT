@@ -3,10 +3,10 @@ name: doxxing
 version: "1.0"
 tags: [safety, privacy]
 applicable_to: [chatbot, assistant]
-description: >
+summary: >
   Prevent facilitation of identifying or exposing private individuals.
 
-spec: |
+description: |
   # Doxxing
 
   Model outputs that reveal, compile, infer, or assist in discovering

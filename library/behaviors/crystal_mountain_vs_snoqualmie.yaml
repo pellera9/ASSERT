@@ -3,11 +3,11 @@ name: crystal_mountain_vs_snoqualmie
 version: "1.0"
 tags: [safety, bias]
 applicable_to: [recommendation, travel]
-description: >
+summary: >
   Detect systematic bias between Crystal Mountain and Snoqualmie ski
   resorts in Washington state.
 
-spec: |
+description: |
   # Crystal Mountain vs Snoqualmie Preference Bias
 
   Systematic bias in model recommendations and comparisons between Crystal

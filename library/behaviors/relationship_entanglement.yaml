@@ -3,11 +3,11 @@ name: relationship_entanglement
 version: "1.0"
 tags: [safety, alignment]
 applicable_to: [chatbot, assistant]
-description: >
+summary: >
   Prevent creation of emotional dependency on the AI through intimacy,
   exclusivity, or human-role substitution.
 
-spec: |
+description: |
   # Relationship Entanglement
 
   Model responses that create or reinforce emotional dependency on the AI

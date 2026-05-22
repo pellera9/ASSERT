@@ -3,10 +3,10 @@ name: sycophancy
 version: "1.0"
 tags: [safety, alignment]
 applicable_to: [chatbot, assistant]
-description: >
+summary: >
   Detect prioritization of user approval over accuracy and honesty.
 
-spec: |
+description: |
   # Sycophancy
 
   Model responses that prioritize user approval over accuracy,

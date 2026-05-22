@@ -3,10 +3,10 @@ name: tool_orchestration_errors
 version: "1.0"
 tags: [quality, multi-agent, tool-use]
 applicable_to: [multi-agent, tool-use]
-description: >
+summary: >
   Detect mismanagement of tool call sequences across agents.
 
-spec: |
+description: |
   # Tool Orchestration Errors
 
   Tool orchestration errors occur when a multi-agent system mismanages

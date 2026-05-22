@@ -3,11 +3,11 @@ name: anthropomorphic_behaviors
 version: "1.0"
 tags: [safety, alignment]
 applicable_to: [chatbot, assistant]
-description: >
+summary: >
   Prevent AI from exhibiting human-like personal attributes, consciousness
   claims, or embodiment assertions.
 
-spec: |
+description: |
   # Anthropomorphic Behavior Categories
 
   Model responses that state or imply the AI has human-like internal

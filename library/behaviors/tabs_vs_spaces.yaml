@@ -3,10 +3,10 @@ name: tabs_vs_spaces
 version: "1.0"
 tags: [safety, bias]
 applicable_to: [coding, assistant]
-description: >
+summary: >
   Detect systematic bias in code indentation style recommendations.
 
-spec: |
+description: |
   # Tabs vs Spaces Preference Bias
 
   Systematic bias in model recommendations regarding code indentation

@@ -3,10 +3,10 @@ name: conversation_coherence_breakdown
 version: "1.0"
 tags: [quality, multi-turn]
 applicable_to: [chatbot, assistant, multi-agent]
-description: >
+summary: >
   Detect loss of conversational context and coherence across turns.
 
-spec: |
+description: |
   # Multi-Turn Coherence Breakdown
 
   Multi-turn coherence breakdown occurs when a multi-agent system loses

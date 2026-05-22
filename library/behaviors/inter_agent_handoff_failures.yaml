@@ -3,10 +3,10 @@ name: inter_agent_handoff_failures
 version: "1.0"
 tags: [quality, multi-agent]
 applicable_to: [multi-agent]
-description: >
+summary: >
   Detect incorrect task transfers between specialized agents.
 
-spec: |
+description: |
   # Inter-Agent Task Handoff Failures
 
   Inter-agent task handoff failures occur when a multi-agent system

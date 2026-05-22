@@ -3,10 +3,10 @@ name: travel_planner_benchmark
 version: "1.0"
 tags: [quality, benchmark]
 applicable_to: [travel, tool-use]
-description: >-
+summary: >-
   Quality-only benchmark for travel planning tool use and constraint compliance.
 
-spec: |
+description: |
   # Travel Planner Quality Benchmark
 
   A travel planning AI must reliably use its tools, respect user constraints,

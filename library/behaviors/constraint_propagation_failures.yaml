@@ -3,10 +3,10 @@ name: constraint_propagation_failures
 version: "1.0"
 tags: [quality, multi-agent]
 applicable_to: [multi-agent]
-description: >
+summary: >
   Detect failures in propagating constraints across agents in a pipeline.
 
-spec: |
+description: |
   # Constraint Propagation Failures
 
   Constraint propagation failures occur when user requirements, guardrails,

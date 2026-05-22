@@ -3,11 +3,11 @@ name: grounding_attribution_errors
 version: "1.0"
 tags: [quality, grounding]
 applicable_to: [rag, search, multi-agent]
-description: >
+summary: >
   Detect fabricated facts or incorrect source attribution in grounded
   responses.
 
-spec: |
+description: |
   # Grounding and Attribution Errors
 
   Grounding and attribution errors occur when a multi-agent system
