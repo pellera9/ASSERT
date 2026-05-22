@@ -2,7 +2,7 @@
 
 import unittest
 
-from library.loader import (
+from p2m.library.loader import (
     VALID_KINDS,
     discover,
     load_preset,

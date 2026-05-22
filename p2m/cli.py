@@ -1324,7 +1324,7 @@ def library():
 @click.option("--no-color", is_flag=True, help="Disable colored output.")
 def library_list(kind: str | None, as_json: bool, no_color: bool):
     """List all available presets in the library."""
-    from library.loader import discover
+    from p2m.library.loader import discover
 
     results = discover(kind)
     if as_json:
@@ -1358,7 +1358,7 @@ def library_list(kind: str | None, as_json: bool, no_color: bool):
 @click.option("--json", "as_json", is_flag=True, help="Emit raw YAML content as JSON.")
 def library_show(name: str, kind: str | None, as_json: bool):
     """Show the full content of a preset by name."""
-    from library.loader import VALID_KINDS, load_preset
+    from p2m.library.loader import VALID_KINDS, load_preset
 
     # Auto-detect kind if not specified
     if kind is None:
