@@ -51,12 +51,21 @@ class DisplayLabelTest(unittest.TestCase):
         self.assertEqual(display.label_stage("test_set"), "Test Set Generation")
         self.assertEqual(display.label_stage("inference"), "Inference")
         self.assertEqual(display.label_stage("judge"), "Scoring")
+        self.assertEqual(display.label_stage("systematization"), "Systematization")
+        self.assertEqual(
+            display.label_stage("systematization_convert"),
+            "Behavior Categories Conversion",
+        )
 
     def test_stage_status_labels(self) -> None:
         self.assertEqual(display.label_stage_status("completed"), "Complete")
         self.assertEqual(display.label_stage_status("running"), "Running")
         self.assertEqual(display.label_stage_status("pending"), "Pending")
-        self.assertEqual(display.label_stage_status("failed"), "Failed")
+        # The viewer normalizes manifest ``failed`` per-stage values to
+        # ``error`` before rendering, so both keys collapse to the same
+        # CLI-facing label here.
+        self.assertEqual(display.label_stage_status("failed"), "Error")
+        self.assertEqual(display.label_stage_status("error"), "Error")
         self.assertEqual(display.label_stage_status(None), "—")
 
     def test_metric_labels(self) -> None:

@@ -790,7 +790,11 @@ def results_status(suite: str, run: Optional[str], results_dir: Path, as_json: b
         table.add_column("Stage", style="cyan", no_wrap=True)
         table.add_column("Status", style="white", no_wrap=True)
         for stage_name, meta in stage_meta.items():
-            table.add_row(label_stage(stage_name), label_stage_status(str(meta)))
+            # ``label_stage_status`` already accepts ``str | None``; wrapping
+            # ``meta`` in ``str(...)`` would turn a missing/None value into the
+            # literal string "None" instead of the intended em-dash placeholder.
+            stage_status = meta if isinstance(meta, str) else None
+            table.add_row(label_stage(stage_name), label_stage_status(stage_status))
         console.print(table)
 
     prompt_metrics = run_summary.get("prompt_metrics")
@@ -1030,7 +1034,7 @@ def _run_within_suite_compare(
         )
         table.add_row(
             row["run_id"],
-            label_stage_status(str(row["status"])),
+            label_stage_status(row["status"] if isinstance(row.get("status"), str) else None),
             _format_timestamp(row.get("started_at")),
             str(target_model),
             _fmt_percent(_dimension_rate(prompt_metrics, metric)),

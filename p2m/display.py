@@ -25,25 +25,37 @@ STATUS_LABELS: dict[str, str] = {
 
 # Maps runner stage names (``p2m/stages/__init__.py``) to the human label the
 # viewer's run monitor uses. ``systematize`` and ``taxonomy`` resolve to the
-# same label because the viewer historically used the artifact name.
+# same label because the viewer historically used the artifact name. Keep the
+# sub-stage entries (``systematization``, ``systematization_convert``) in sync
+# with ``stageLabels`` in
+# ``viewer/src/routes/suite/[suite_id]/[run_id]/monitor/+page.svelte`` — those
+# can appear in ``manifest.stages`` for runs that broke ``systematize`` into
+# its two phases, and without them the CLI would drift to snake-case while the
+# viewer rendered the locked label.
 STAGE_LABELS: dict[str, str] = {
     "systematize": "Behavior Categories Generation",
     "taxonomy": "Behavior Categories Generation",
     "test_set": "Test Set Generation",
     "inference": "Inference",
     "judge": "Scoring",
+    "systematization": "Systematization",
+    "systematization_convert": "Behavior Categories Conversion",
 }
 
 
-# Maps run-stage execution status to the verb the viewer uses. Mirrors
-# ``formatStageStatus`` in the run monitor page.
+# Maps run-stage execution status to the human label the viewer shows for the
+# same status. The viewer normalizes raw manifest ``failed`` per-stage values
+# to ``error`` before rendering (see ``toUiStageStatus`` in
+# ``viewer/src/lib/server/run-status.ts``) and ``formatStageStatus`` in the
+# monitor page then renders that ``error`` as ``"Error"``. Collapse both keys
+# to ``"Error"`` here so a failed stage reads the same way on the CLI.
 STAGE_STATUS_LABELS: dict[str, str] = {
     "pending": "Pending",
     "running": "Running",
     "completed": "Complete",
     "skipped": "Skipped",
     "error": "Error",
-    "failed": "Failed",
+    "failed": "Error",
 }
 
 
