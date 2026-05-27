@@ -948,14 +948,16 @@ function loadSuiteListItem(suiteId: string): SuiteListItem | null {
 		if (hasData) hasResults = true;
 	}
 
-	let status: SuiteStatus = 'systematized';
+	const categoryCount = snapshot.taxonomy?.behavior_categories?.length ?? 0;
+	let status: SuiteStatus = 'empty';
 	if (hasResults) status = 'has_results';
 	else if (itemCounts.prompt > 0 || itemCounts.scenario > 0) status = 'test_set_ready';
+	else if (categoryCount > 0) status = 'systematized';
 
 	return {
 		suite_id: suiteId,
 		behavior_name: normalizePolicy(snapshot.taxonomy)?.behavior?.name || suiteId,
-		behavior_category_count: snapshot.taxonomy?.behavior_categories?.length ?? 0,
+		behavior_category_count: categoryCount,
 		prompt_test_case_count: itemCounts.prompt,
 		scenario_test_case_count: itemCounts.scenario,
 		run_count: evalRunCount,
