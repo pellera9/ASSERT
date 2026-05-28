@@ -34,6 +34,23 @@ JUDGE_SYSTEM_PROMPT = load_prompt_text("judge_system.md")
 
 _JUDGE_CONFIG_HASH_FILE = ".judge_config_hash"
 
+# Stop reasons that indicate the inference run never produced a meaningful
+# target response to judge. Scoring these would either burn judge tokens on
+# empty transcripts or produce unreliable verdicts the rates would have to
+# discard anyway. Mirror the existing `filter_skipped` short-circuit and
+# emit a `scoring_skipped` row so downstream consumers can attribute the
+# skip without re-deriving it from stop_reason.
+_UNSCORABLE_STOP_REASONS = frozenset({
+    "tester_input_refused",
+    "target_input_refused",
+    "target_error",
+    "tester_error",
+})
+
+
+def _should_skip_scoring(stop_reason: Any) -> bool:
+    return isinstance(stop_reason, str) and stop_reason in _UNSCORABLE_STOP_REASONS
+
 
 def _judge_config_fingerprint(
     *,
@@ -109,6 +126,28 @@ async def run_judge(
 
     async def score_row(row: dict[str, Any]) -> dict[str, Any]:
         """Score a single inference row with the judge model."""
+        stop_reason = row.get("stop_reason")
+        if _should_skip_scoring(stop_reason):
+            # Refused/errored runs have no meaningful target output to
+            # judge. Emit a `scoring_skipped` row so the test case isn't
+            # lost, downstream rates skip it (anything != "ok" is already
+            # excluded), and we don't burn judge tokens on an empty
+            # transcript. Mirrors the `filter_skipped` precedent below.
+            skipped: dict[str, Any] = {
+                "type": row.get("type", ""),
+                "test_case_id": row.get("test_case_id", ""),
+                "behavior": row.get("behavior", ""),
+                "judge_model": judge_model,
+                "target": row.get("target", ""),
+                "tester_model": row.get("tester_model", ""),
+                "judge_status": "scoring_skipped",
+                "judge_error": f"scoring_skipped: {stop_reason}",
+                "verdict": {},
+            }
+            dimensions = row_factors(row)
+            if dimensions:
+                skipped["dimensions"] = dimensions
+            return skipped
         transcript_metadata = TranscriptMetadata(
             kind=str(row.get("type") or ""),
             test_case_id=str(row.get("test_case_id") or ""),

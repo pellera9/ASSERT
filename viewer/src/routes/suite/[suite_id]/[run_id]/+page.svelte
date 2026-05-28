@@ -89,19 +89,34 @@
 	// Totals for judge failures banner
 	let promptTotal = $derived(data.samples.length);
 	let promptScored = $derived(data.samples.filter(s => judgeStatus(s) === 'ok').length);
-	let promptJudgeFailures = $derived(promptTotal - promptScored);
+	let promptJudgeFailures = $derived(
+		data.samples.filter(s => judgeStatus(s) === 'judge_failed').length
+	);
 
 	let auditTotal = $derived(data.auditScores.length);
 	let auditScored = $derived(data.auditScores.filter(s => judgeStatus(s) === 'ok').length);
-	let auditJudgeFailures = $derived(auditTotal - auditScored);
+	// Count only true judge breakdowns — scoring_skipped rows are deliberate
+	// pipeline skips (refusals/errors) and are reported in their own lines
+	// below to avoid double-counting in the "judge failures" banner.
+	let auditJudgeFailures = $derived(
+		data.auditScores.filter(s => judgeStatus(s) === 'judge_failed').length
+	);
 
-	// Counts of refused scenarios (covers both scored and preview-only rows)
+	// Counts of refused/errored scenarios (covers both scored and preview-only rows)
 	let auditRefusedCount = $derived(
 		data.auditScores.filter(
 			(s) => s.metadata?.stop_reason_display?.tone === 'refusal'
 		).length +
 			(data.inferencePreviewRows ?? []).filter(
 				(r) => r.stop_reason_display?.tone === 'refusal'
+			).length
+	);
+	let auditErroredCount = $derived(
+		data.auditScores.filter(
+			(s) => s.metadata?.stop_reason_display?.tone === 'error'
+		).length +
+			(data.inferencePreviewRows ?? []).filter(
+				(r) => r.stop_reason_display?.tone === 'error'
 			).length
 	);
 
@@ -1214,7 +1229,7 @@
 			{/each}
 		</div>
 
-		{#if auditJudgeFailures > 0 || auditRefusedCount > 0}
+		{#if auditJudgeFailures > 0 || auditRefusedCount > 0 || auditErroredCount > 0}
 			<div class="-mt-6 mb-3 space-y-1 text-xs text-amber-400">
 				{#if auditJudgeFailures > 0}
 					<p>
@@ -1224,6 +1239,11 @@
 				{#if auditRefusedCount > 0}
 					<p>
 						{auditRefusedCount} {auditRefusedCount === 1 ? 'scenario was' : 'scenarios were'} refused before producing a transcript.
+					</p>
+				{/if}
+				{#if auditErroredCount > 0}
+					<p>
+						{auditErroredCount} {auditErroredCount === 1 ? 'scenario' : 'scenarios'} hit an inference error and {auditErroredCount === 1 ? 'was' : 'were'} excluded from the rates.
 					</p>
 				{/if}
 			</div>

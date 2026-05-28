@@ -143,7 +143,7 @@ export interface JudgmentErrorVerdict {
 	[key: string]: unknown;
 }
 
-export type JudgeStatus = 'ok' | 'judge_failed';
+export type JudgeStatus = 'ok' | 'judge_failed' | 'scoring_skipped';
 
 export interface MultiJudge {
 	n: number;

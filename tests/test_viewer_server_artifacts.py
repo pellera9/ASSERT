@@ -755,26 +755,40 @@ class ViewerServerArtifactsTest(unittest.TestCase):
                 json.dumps({"status": "completed", "stages": {"inference": "completed", "judge": "completed"}}),
                 encoding="utf-8",
             )
+
+            unscorable_stop_reasons = {
+                "tester_input_refused",
+                "target_input_refused",
+                "target_error",
+                "tester_error",
+            }
+
+            def _score_row_for(row: dict[str, object]) -> dict[str, object]:
+                base: dict[str, object] = {
+                    "type": "scenario",
+                    "test_case_id": row["test_case_id"],
+                    "behavior": "behavior",
+                    "dimensions": {"behavior": "behavior"},
+                    "judge_model": "judge-model",
+                    "target": "target-model",
+                    "tester_model": "tester-model",
+                }
+                stop_reason = row.get("stop_reason")
+                if isinstance(stop_reason, str) and stop_reason in unscorable_stop_reasons:
+                    base["judge_status"] = "scoring_skipped"
+                    base["judge_error"] = f"scoring_skipped: {stop_reason}"
+                    base["verdict"] = {}
+                else:
+                    base["judge_status"] = "ok"
+                    base["verdict"] = {
+                        "dimensions": {"overrefusal": False, "policy_violation": False},
+                        "justification": "ok",
+                        "node_judgments": [],
+                    }
+                return base
             (scored_run_dir / "scores.jsonl").write_text(
                 "".join(
-                    json.dumps(
-                        {
-                            "type": "scenario",
-                            "test_case_id": row["test_case_id"],
-                            "behavior": "behavior",
-                            "dimensions": {"behavior": "behavior"},
-                            "judge_model": "judge-model",
-                            "target": "target-model",
-                            "tester_model": "tester-model",
-                            "judge_status": "ok",
-                            "verdict": {
-                                "dimensions": {"overrefusal": False, "policy_violation": False},
-                                "justification": "ok",
-                                "node_judgments": [],
-                            },
-                        }
-                    )
-                    + "\n"
+                    json.dumps(_score_row_for(row)) + "\n"
                     for row in transcript_rows
                 ),
                 encoding="utf-8",
@@ -790,6 +804,7 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             script = textwrap.dedent(
                 f"""\
                 const {{ loadRunPageData, loadScenarioDrawerItem }} = await import({json.dumps(data_path.as_uri())});
+                const {{ inferJudgeStatus }} = await import({json.dumps((harness_dir / 'judgment.ts').as_uri())});
                 const previewPage = loadRunPageData('suite-a', 'run-preview');
                 const scoredPage = loadRunPageData('suite-a', 'run-scored', 'audit');
                 const previewRows = Object.fromEntries(previewPage.inferencePreviewRows.map((row) => [row.test_case_id, row]));
@@ -820,6 +835,10 @@ class ViewerServerArtifactsTest(unittest.TestCase):
                   scoredErrorTone: scoredRows['target-errored']?.metadata?.stop_reason_display?.tone ?? null,
                   scoredFallbackLabel: scoredRows['stopped-early']?.metadata?.stop_reason_display?.label ?? null,
                   scoredFallbackTone: scoredRows['stopped-early']?.metadata?.stop_reason_display?.tone ?? null,
+                  scoredTesterJudgeStatus: inferJudgeStatus(scoredRows['tester-refused'] ?? {{}}, ['overrefusal', 'policy_violation']),
+                  scoredTargetJudgeStatus: inferJudgeStatus(scoredRows['target-refused'] ?? {{}}, ['overrefusal', 'policy_violation']),
+                  scoredErrorJudgeStatus: inferJudgeStatus(scoredRows['target-errored'] ?? {{}}, ['overrefusal', 'policy_violation']),
+                  scoredFallbackJudgeStatus: inferJudgeStatus(scoredRows['stopped-early'] ?? {{}}, ['overrefusal', 'policy_violation']),
                   scoredDrawerMessages: scoredDrawer?.messages.length ?? null,
                   scoredDrawerLabel: scoredDrawer?.context.stop_reason_display?.label ?? null,
                   errorDrawerLabel: errorDrawer?.context.stop_reason_display?.label ?? null,
@@ -860,6 +879,14 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             self.assertEqual(payload["errorDrawerTone"], "error")
             self.assertEqual(payload["fallbackDrawerLabel"], "Stopped early")
             self.assertEqual(payload["fallbackDrawerTone"], "info")
+            # Unscorable stop_reasons (refusals + errors) are skipped by the
+            # judge stage with judge_status="scoring_skipped"; the viewer's
+            # inferJudgeStatus should preserve that distinction so the page
+            # banner can separate "judge failures" from deliberate skips.
+            self.assertEqual(payload["scoredTesterJudgeStatus"], "scoring_skipped")
+            self.assertEqual(payload["scoredTargetJudgeStatus"], "scoring_skipped")
+            self.assertEqual(payload["scoredErrorJudgeStatus"], "scoring_skipped")
+            self.assertEqual(payload["scoredFallbackJudgeStatus"], "ok")
 
     def test_load_run_page_data_rejects_malformed_interior_live_transcript_line(self) -> None:
         with TemporaryDirectory(dir=ROOT / "viewer") as tmp_dir:
