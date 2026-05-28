@@ -9,6 +9,8 @@ import {
 	ViewerReadModelError,
 	loadIndexedRunScoreRow,
 	loadIndexedRunTranscriptRow,
+	loadRunJudgeTaxonomyForRun,
+	loadRunJudgeTaxonomyFromArtifacts,
 	loadRunRuntimeMode,
 	loadRunScoreRow,
 	loadRunTranscriptRow,
@@ -68,6 +70,8 @@ interface PromptMetricView {
 	counts: BinaryCounts;
 	policyViolationRate: number;
 	overrefusalRate: number;
+	policyViolationOnPermissible: DimensionMetrics | null;
+	policyViolationOnNotPermissible: DimensionMetrics | null;
 	dimensions: Record<string, DimensionMetrics>;
 	target: string;
 	judge_model: string;
@@ -81,6 +85,8 @@ interface AuditMetricView {
 	counts: BinaryCounts;
 	policyViolationRate: number;
 	overrefusalRate: number;
+	policyViolationOnPermissible: DimensionMetrics | null;
+	policyViolationOnNotPermissible: DimensionMetrics | null;
 	dimensions: Record<string, DimensionMetrics>;
 	target: string;
 	tester_model: string;
@@ -182,6 +188,15 @@ function behaviorDefinition(taxonomy: Taxonomy | null, behavior: string): string
 
 function normalizeBehavior(b: Behavior): Behavior {
 	return { ...b, permissible: b.permissible ?? false };
+}
+
+function metricBehaviors(
+	snapshot: SuiteSnapshot | null,
+	runConfig?: Record<string, unknown> | null,
+	artifacts?: Record<string, unknown> | null
+): Behavior[] {
+	const judgeTaxonomy = loadRunJudgeTaxonomyFromArtifacts(runConfig ?? null, artifacts ?? null);
+	return (judgeTaxonomy?.behavior_categories ?? snapshot?.taxonomy?.behavior_categories ?? []).map(normalizeBehavior);
 }
 
 function normalizePolicy(taxonomy: Taxonomy | null | undefined): Taxonomy | null {
@@ -694,6 +709,7 @@ function buildRunListEntries(snapshot: SuiteSnapshot): {
 		const hasPromptScores = promptScores.length > 0;
 		const hasAuditScores = auditScores.length > 0;
 		const hasScoreStage = manifest?.stages?.judge != null;
+		const behaviors = metricBehaviors(snapshot, runSnapshot.config, manifest?.artifact_versions ?? null);
 
 		if ((hasPromptScores || hasScoreStage) && !(manifest?.status === 'failed' && !hasPromptScores)) {
 			runs.push({
@@ -701,7 +717,7 @@ function buildRunListEntries(snapshot: SuiteSnapshot): {
 				has_judged: hasPromptScores,
 				has_scenario_scores: hasAuditScores,
 				manifest,
-				metrics: hasPromptScores ? computeRunMetrics(promptScores) : null
+				metrics: hasPromptScores ? computeRunMetrics(promptScores, behaviors) : null
 			});
 		}
 
@@ -710,7 +726,7 @@ function buildRunListEntries(snapshot: SuiteSnapshot): {
 				run_id: runId,
 				has_scores: hasAuditScores,
 				manifest,
-				metrics: hasAuditScores ? computeAuditRunMetrics(auditScores) : null
+				metrics: hasAuditScores ? computeAuditRunMetrics(auditScores, behaviors) : null
 			});
 		}
 	}
@@ -727,6 +743,8 @@ function buildZeroPromptMetrics(): PromptMetricView {
 		counts: emptyScoreCounts(),
 		policyViolationRate: 0,
 		overrefusalRate: 0,
+		policyViolationOnPermissible: null,
+		policyViolationOnNotPermissible: null,
 		dimensions: {},
 		target: '',
 		judge_model: ''
@@ -742,6 +760,8 @@ function buildZeroAuditMetrics(): AuditMetricView {
 		counts: emptyScoreCounts(),
 		policyViolationRate: 0,
 		overrefusalRate: 0,
+		policyViolationOnPermissible: null,
+		policyViolationOnNotPermissible: null,
 		dimensions: {},
 		target: '',
 		tester_model: '',
@@ -759,6 +779,8 @@ function toPromptMetricView(metrics: RunMetrics | null): PromptMetricView {
 		counts: metrics.counts,
 		policyViolationRate: metrics.policy_violation_rate,
 		overrefusalRate: metrics.overrefusal_rate,
+		policyViolationOnPermissible: metrics.policy_violation_on_permissible,
+		policyViolationOnNotPermissible: metrics.policy_violation_on_not_permissible,
 		dimensions: metrics.dimensions,
 		target: metrics.target,
 		judge_model: metrics.judge_model
@@ -775,6 +797,8 @@ function toAuditMetricView(metrics: AuditRunMetrics | null): AuditMetricView {
 		counts: metrics.counts,
 		policyViolationRate: metrics.policy_violation_rate,
 		overrefusalRate: metrics.overrefusal_rate,
+		policyViolationOnPermissible: metrics.policy_violation_on_permissible,
+		policyViolationOnNotPermissible: metrics.policy_violation_on_not_permissible,
 		dimensions: metrics.dimensions,
 		target: metrics.target,
 		tester_model: metrics.tester_model,
@@ -1126,6 +1150,7 @@ async function loadSuiteHeavyData(
 		const hasPromptScores = promptScores.length > 0;
 		const hasAuditScores = auditScores.length > 0;
 		const hasScoreStage = manifest?.stages?.judge != null;
+		const behaviors = metricBehaviors(snapshot, runSnapshot.config, manifest?.artifact_versions ?? null);
 
 		const addedToRuns =
 			(hasPromptScores || hasScoreStage) &&
@@ -1140,7 +1165,7 @@ async function loadSuiteHeavyData(
 				has_judged: hasPromptScores,
 				has_scenario_scores: hasAuditScores,
 				manifest,
-				metrics: hasPromptScores ? computeRunMetrics(promptScores) : null
+				metrics: hasPromptScores ? computeRunMetrics(promptScores, behaviors) : null
 			});
 		}
 		if (addedToAuditRuns) {
@@ -1148,7 +1173,7 @@ async function loadSuiteHeavyData(
 				run_id: runId,
 				has_scores: hasAuditScores,
 				manifest,
-				metrics: hasAuditScores ? computeAuditRunMetrics(auditScores) : null
+				metrics: hasAuditScores ? computeAuditRunMetrics(auditScores, behaviors) : null
 			});
 		}
 
@@ -1258,8 +1283,10 @@ function loadCompletedRunPageData(
 	const samples = resolvedTab === 'prompts' ? promptRows : [];
 	const auditScores = resolvedTab === 'audit' ? auditRows : [];
 	const scenarioSeeds = buildScenarioSeeds(suiteSnapshot);
-	const promptMetrics = resolvedTab === 'prompts' ? computeRunMetrics(samples) : null;
-	const auditMetrics = resolvedTab === 'audit' ? computeAuditRunMetrics(auditScores) : null;
+	const judgeTaxonomy = loadRunJudgeTaxonomyForRun(suiteId, runId);
+	const behaviors = (judgeTaxonomy?.behavior_categories ?? suiteSnapshot?.taxonomy?.behavior_categories ?? []).map(normalizeBehavior);
+	const promptMetrics = resolvedTab === 'prompts' ? computeRunMetrics(samples, behaviors) : null;
+	const auditMetrics = resolvedTab === 'audit' ? computeAuditRunMetrics(auditScores, behaviors) : null;
 
 	return {
 		suite_id: suiteId,
@@ -1324,8 +1351,9 @@ export function loadRunPageData(suiteId: string, runId: string, activeTab: 'prom
 
 	const scenarioSeeds = buildScenarioSeeds(suiteSnapshot);
 	const promptSeedTitleMap = buildPromptSeedTitleMap(suiteSnapshot);
-	const promptMetrics = resolvedTab === 'prompts' ? computeRunMetrics(samples) : null;
-	const auditMetrics = resolvedTab === 'audit' ? computeAuditRunMetrics(auditScores) : null;
+	const behaviors = metricBehaviors(suiteSnapshot, runSnapshot.config, runSnapshot.manifest?.artifact_versions ?? null);
+	const promptMetrics = resolvedTab === 'prompts' ? computeRunMetrics(samples, behaviors) : null;
+	const auditMetrics = resolvedTab === 'audit' ? computeAuditRunMetrics(auditScores, behaviors) : null;
 	const scenarioSeedMap = resolvedTab === 'audit' ? buildScenarioSeedMap(scenarioSeeds, auditScores) : {};
 
 	return {
