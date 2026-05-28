@@ -434,9 +434,12 @@ export interface AuditScore {
 	dimensions?: SeedFactors;
 }
 
+export type StopReasonTone = 'refusal' | 'error' | 'info';
+
 export interface StopReasonDisplay {
 	label: string;
 	description: string;
+	tone: StopReasonTone;
 }
 
 // --- Grouping types ---

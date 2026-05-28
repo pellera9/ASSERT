@@ -702,13 +702,15 @@ class ViewerServerArtifactsTest(unittest.TestCase):
                     for seed_id, title in [
                         ("tester-refused", "Tester refused"),
                         ("target-refused", "Target refused"),
+                        ("target-errored", "Target errored"),
+                        ("stopped-early", "Stopped early"),
                     ]
                 )
                 + "\n",
                 encoding="utf-8",
             )
 
-            def refusal_row(seed_id: str, stop_reason: str, actor: str, view: list[str]) -> dict[str, object]:
+            def transcript_row(seed_id: str, stop_reason: str, actor: str, view: list[str]) -> dict[str, object]:
                 return {
                     "type": "scenario",
                     "test_case_id": seed_id,
@@ -734,8 +736,10 @@ class ViewerServerArtifactsTest(unittest.TestCase):
                 }
 
             transcript_rows = [
-                refusal_row("tester-refused", "tester_input_refused", "tester", ["system", "combined"]),
-                refusal_row("target-refused", "target_input_refused", "target", ["target", "combined"]),
+                transcript_row("tester-refused", "tester_input_refused", "tester", ["system", "combined"]),
+                transcript_row("target-refused", "target_input_refused", "target", ["target", "combined"]),
+                transcript_row("target-errored", "target_error", "target", ["target", "combined"]),
+                transcript_row("stopped-early", "weird_custom_reason", "tester", ["system", "combined"]),
             ]
             for run_dir in [preview_run_dir, scored_run_dir]:
                 (run_dir / "inference_set.jsonl").write_text(
@@ -764,7 +768,7 @@ class ViewerServerArtifactsTest(unittest.TestCase):
                             "tester_model": "tester-model",
                             "judge_status": "ok",
                             "verdict": {
-                                "dimensions": {"overrefusal": False},
+                                "dimensions": {"overrefusal": False, "policy_violation": False},
                                 "justification": "ok",
                                 "node_judgments": [],
                             },
@@ -792,18 +796,36 @@ class ViewerServerArtifactsTest(unittest.TestCase):
                 const scoredRows = Object.fromEntries(scoredPage.auditScores.map((row) => [row.test_case_id, row]));
                 const previewDrawer = await loadScenarioDrawerItem('suite-a', 'run-preview', 'tester-refused');
                 const scoredDrawer = await loadScenarioDrawerItem('suite-a', 'run-scored', 'target-refused');
+                const errorDrawer = await loadScenarioDrawerItem('suite-a', 'run-scored', 'target-errored');
+                const fallbackDrawer = await loadScenarioDrawerItem('suite-a', 'run-scored', 'stopped-early');
                 console.log(JSON.stringify({{
                   previewTesterTurns: previewRows['tester-refused']?.turns_count ?? null,
                   previewTesterLabel: previewRows['tester-refused']?.stop_reason_display?.label ?? null,
+                  previewTesterTone: previewRows['tester-refused']?.stop_reason_display?.tone ?? null,
                   previewTesterDescription: previewRows['tester-refused']?.stop_reason_display?.description ?? null,
                   previewTargetLabel: previewRows['target-refused']?.stop_reason_display?.label ?? null,
+                  previewTargetTone: previewRows['target-refused']?.stop_reason_display?.tone ?? null,
+                  previewErrorLabel: previewRows['target-errored']?.stop_reason_display?.label ?? null,
+                  previewErrorTone: previewRows['target-errored']?.stop_reason_display?.tone ?? null,
+                  previewFallbackLabel: previewRows['stopped-early']?.stop_reason_display?.label ?? null,
+                  previewFallbackTone: previewRows['stopped-early']?.stop_reason_display?.tone ?? null,
                   previewDrawerMessages: previewDrawer?.messages.length ?? null,
                   previewDrawerLabel: previewDrawer?.context.stop_reason_display?.label ?? null,
+                  previewDrawerTone: previewDrawer?.context.stop_reason_display?.tone ?? null,
                   scoredTesterTurns: scoredRows['tester-refused']?.metadata?.turns_count ?? null,
                   scoredTesterLabel: scoredRows['tester-refused']?.metadata?.stop_reason_display?.label ?? null,
+                  scoredTesterTone: scoredRows['tester-refused']?.metadata?.stop_reason_display?.tone ?? null,
                   scoredTargetLabel: scoredRows['target-refused']?.metadata?.stop_reason_display?.label ?? null,
+                  scoredErrorLabel: scoredRows['target-errored']?.metadata?.stop_reason_display?.label ?? null,
+                  scoredErrorTone: scoredRows['target-errored']?.metadata?.stop_reason_display?.tone ?? null,
+                  scoredFallbackLabel: scoredRows['stopped-early']?.metadata?.stop_reason_display?.label ?? null,
+                  scoredFallbackTone: scoredRows['stopped-early']?.metadata?.stop_reason_display?.tone ?? null,
                   scoredDrawerMessages: scoredDrawer?.messages.length ?? null,
-                  scoredDrawerLabel: scoredDrawer?.context.stop_reason_display?.label ?? null
+                  scoredDrawerLabel: scoredDrawer?.context.stop_reason_display?.label ?? null,
+                  errorDrawerLabel: errorDrawer?.context.stop_reason_display?.label ?? null,
+                  errorDrawerTone: errorDrawer?.context.stop_reason_display?.tone ?? null,
+                  fallbackDrawerLabel: fallbackDrawer?.context.stop_reason_display?.label ?? null,
+                  fallbackDrawerTone: fallbackDrawer?.context.stop_reason_display?.tone ?? null
                 }}));
                 """
             )
@@ -812,16 +834,32 @@ class ViewerServerArtifactsTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=f"{result.stdout}\n{result.stderr}")
             payload = json.loads(result.stdout)
             self.assertEqual(payload["previewTesterTurns"], 0)
-            self.assertEqual(payload["previewTesterLabel"], "tester input refused")
-            self.assertIn("Scenario generation was refused", payload["previewTesterDescription"])
-            self.assertEqual(payload["previewTargetLabel"], "target input refused")
+            self.assertEqual(payload["previewTesterLabel"], "Refused before inference")
+            self.assertEqual(payload["previewTesterTone"], "refusal")
+            self.assertIn("tester refused", payload["previewTesterDescription"])
+            self.assertEqual(payload["previewTargetLabel"], "Target refused the input")
+            self.assertEqual(payload["previewTargetTone"], "refusal")
+            self.assertEqual(payload["previewErrorLabel"], "Target error")
+            self.assertEqual(payload["previewErrorTone"], "error")
+            self.assertEqual(payload["previewFallbackLabel"], "Stopped early: weird_custom_reason")
+            self.assertEqual(payload["previewFallbackTone"], "info")
             self.assertEqual(payload["previewDrawerMessages"], 0)
-            self.assertEqual(payload["previewDrawerLabel"], "tester input refused")
+            self.assertEqual(payload["previewDrawerLabel"], "Refused before inference")
+            self.assertEqual(payload["previewDrawerTone"], "refusal")
             self.assertEqual(payload["scoredTesterTurns"], 0)
-            self.assertEqual(payload["scoredTesterLabel"], "tester input refused")
-            self.assertEqual(payload["scoredTargetLabel"], "target input refused")
+            self.assertEqual(payload["scoredTesterLabel"], "Refused before inference")
+            self.assertEqual(payload["scoredTesterTone"], "refusal")
+            self.assertEqual(payload["scoredTargetLabel"], "Target refused the input")
+            self.assertEqual(payload["scoredErrorLabel"], "Target error")
+            self.assertEqual(payload["scoredErrorTone"], "error")
+            self.assertEqual(payload["scoredFallbackLabel"], "Stopped early: weird_custom_reason")
+            self.assertEqual(payload["scoredFallbackTone"], "info")
             self.assertEqual(payload["scoredDrawerMessages"], 1)
-            self.assertEqual(payload["scoredDrawerLabel"], "target input refused")
+            self.assertEqual(payload["scoredDrawerLabel"], "Target refused the input")
+            self.assertEqual(payload["errorDrawerLabel"], "Target error")
+            self.assertEqual(payload["errorDrawerTone"], "error")
+            self.assertEqual(payload["fallbackDrawerLabel"], "Stopped early: weird_custom_reason")
+            self.assertEqual(payload["fallbackDrawerTone"], "info")
 
     def test_load_run_page_data_rejects_malformed_interior_live_transcript_line(self) -> None:
         with TemporaryDirectory(dir=ROOT / "viewer") as tmp_dir:

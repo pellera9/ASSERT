@@ -202,8 +202,14 @@
 	}
 
 	function stopReasonChipClass(display?: StopReasonDisplay | null): string {
-		if (display) {
+		if (display?.tone === 'refusal') {
 			return 'rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400';
+		}
+		if (display?.tone === 'error') {
+			return 'rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-400';
+		}
+		if (display?.tone === 'info') {
+			return 'rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-secondary';
 		}
 		return 'rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-muted';
 	}
@@ -1093,11 +1099,24 @@
 				</div>
 			{/if}
 			{#if item.kind === 'scenario' && item.context.stop_reason_display}
-				<div class="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-					<div class="text-xs font-semibold uppercase tracking-wide text-amber-400">
-						{item.context.stop_reason_display.label}
+				{@const display = item.context.stop_reason_display}
+				{@const calloutBoxClass =
+					display.tone === 'error'
+						? 'mb-4 rounded-lg border border-rose-500/20 bg-rose-500/5 px-4 py-3'
+						: display.tone === 'info'
+						? 'mb-4 rounded-lg border border-border bg-surface-2/40 px-4 py-3'
+						: 'mb-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3'}
+				{@const calloutLabelClass =
+					display.tone === 'error'
+						? 'text-xs font-semibold uppercase tracking-wide text-rose-400'
+						: display.tone === 'info'
+						? 'text-xs font-semibold uppercase tracking-wide text-text-secondary'
+						: 'text-xs font-semibold uppercase tracking-wide text-amber-400'}
+				<div class={calloutBoxClass}>
+					<div class={calloutLabelClass}>
+						{display.label}
 					</div>
-					<p class="mt-1 text-sm text-text-secondary">{item.context.stop_reason_display.description}</p>
+					<p class="mt-1 text-sm text-text-secondary">{display.description}</p>
 					{#if item.context.stop_reason}
 						<p class="mt-2 text-[11px] text-text-muted">
 							Stop reason: <code class="rounded bg-black/20 px-1 py-0.5">{item.context.stop_reason}</code>

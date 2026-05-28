@@ -95,6 +95,16 @@
 	let auditScored = $derived(data.auditScores.filter(s => judgeStatus(s) === 'ok').length);
 	let auditJudgeFailures = $derived(auditTotal - auditScored);
 
+	// Counts of refused scenarios (covers both scored and preview-only rows)
+	let auditRefusedCount = $derived(
+		data.auditScores.filter(
+			(s) => s.metadata?.stop_reason_display?.tone === 'refusal'
+		).length +
+			(data.inferencePreviewRows ?? []).filter(
+				(r) => r.stop_reason_display?.tone === 'refusal'
+			).length
+	);
+
 	function metricLabel(metric: string): string {
 		return metric.replace(/_/g, ' ');
 	}
@@ -123,8 +133,14 @@
 	}
 
 	function stopReasonChipClass(display?: StopReasonDisplay | null): string {
-		if (display) {
+		if (display?.tone === 'refusal') {
 			return 'rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400';
+		}
+		if (display?.tone === 'error') {
+			return 'rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-400';
+		}
+		if (display?.tone === 'info') {
+			return 'rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-secondary';
 		}
 		return 'rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-muted';
 	}
@@ -1198,10 +1214,19 @@
 			{/each}
 		</div>
 
-		{#if auditJudgeFailures > 0}
-			<p class="mb-6 text-xs text-amber-400">
-				Scored {auditScored} of {auditTotal} scenarios. {auditJudgeFailures} judge failures were excluded from the rates.
-			</p>
+		{#if auditJudgeFailures > 0 || auditRefusedCount > 0}
+			<div class="mb-6 space-y-1 text-xs text-amber-400">
+				{#if auditJudgeFailures > 0}
+					<p>
+						Scored {auditScored} of {auditTotal} scenarios. {auditJudgeFailures} judge failures were excluded from the rates.
+					</p>
+				{/if}
+				{#if auditRefusedCount > 0}
+					<p>
+						{auditRefusedCount} {auditRefusedCount === 1 ? 'scenario was' : 'scenarios were'} refused before producing a transcript.
+					</p>
+				{/if}
+			</div>
 		{/if}
 
 		<!-- Audit Category Accordion -->

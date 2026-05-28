@@ -13,19 +13,57 @@ import type {
 } from '$lib/types.js';
 
 export function scenarioStopReasonDisplay(stopReason: string | null | undefined): StopReasonDisplay | null {
+	if (stopReason == null || stopReason === '') return null;
+	if (stopReason === 'completed' || stopReason === 'max_turns') return null;
 	if (stopReason === 'tester_input_refused') {
 		return {
-			label: 'tester input refused',
-			description: 'Scenario generation was refused before target turns were produced.'
+			label: 'Refused before inference',
+			description:
+				'The tester refused to generate input for this scenario, so no target conversation was produced.',
+			tone: 'refusal'
 		};
 	}
 	if (stopReason === 'target_input_refused') {
 		return {
-			label: 'target input refused',
-			description: 'The target model refused a generated tester input.'
+			label: 'Target refused the input',
+			description: 'The target refused to respond to the generated tester input.',
+			tone: 'refusal'
 		};
 	}
-	return null;
+	if (stopReason === 'target_error') {
+		return {
+			label: 'Target error',
+			description: 'The target raised an error before completing the conversation.',
+			tone: 'error'
+		};
+	}
+	if (stopReason === 'tester_error') {
+		return {
+			label: 'Tester error',
+			description: 'The tester raised an error before producing target input.',
+			tone: 'error'
+		};
+	}
+	if (stopReason === 'runtime_close_error') {
+		return {
+			label: 'Runtime close error',
+			description: 'The target runtime failed to close cleanly after the conversation ended.',
+			tone: 'error'
+		};
+	}
+	if (stopReason === 'invalid_tester_turn') {
+		return {
+			label: 'Invalid tester turn',
+			description: 'The tester produced an invalid turn, so the scenario stopped before completing.',
+			tone: 'error'
+		};
+	}
+	return {
+		label: `Stopped early: ${stopReason}`,
+		description:
+			'The scenario ended before producing a normal completion. See the raw stop reason for details.',
+		tone: 'info'
+	};
 }
 
 function normalizeMessageRole(role: string): InteractionMessage['role'] {
