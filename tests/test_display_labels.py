@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 """Unit tests for ``assert_eval.display`` and CLI terminology regression guards."""
 
 from __future__ import annotations
