@@ -755,7 +755,8 @@
 <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm transition-opacity" onclick={onClose}></div>
 
 <div class="fixed inset-4 z-50 mx-auto flex max-w-7xl flex-col overflow-hidden rounded-xl border border-border bg-bg shadow-2xl">
-	<div class="flex items-center gap-3 border-b border-border px-6 py-3 flex-shrink-0">
+	<div class="flex flex-col gap-2 border-b border-border px-6 py-3 flex-shrink-0">
+		<div class="flex items-center gap-3">
 		<button
 			aria-label="Close details"
 			class="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface hover:text-text"
@@ -789,18 +790,9 @@
 				{:else if judgeStatus(item) === 'unjudged'}
 					<span class="rounded px-1.5 py-0.5 text-[10px] font-medium bg-surface-2 text-text-muted">unjudged</span>
 				{/if}
-				{#if item.dimensions}
-					<span class="flex flex-wrap items-center gap-1.5">
-						{#each Object.entries(item.dimensions) as [name, value]}
-							<span class="inline-flex items-center rounded-full bg-zinc-700 px-2 py-0.5 text-[10px] font-medium text-zinc-200">
-								{formatFactorLabel(name)}: {value}
-							</span>
-						{/each}
-					</span>
-				{/if}
 			</div>
 		</div>
-		<div class="flex items-center gap-1.5">
+		<div class="flex flex-wrap items-center justify-end gap-1.5">
 			{#each metricNames as m}
 				{@const v = getRecordFlag(item, m)}
 				{#if v !== null}
@@ -819,6 +811,16 @@
 				</div>
 			{/if}
 		</div>
+		</div>
+		{#if item.dimensions && Object.keys(item.dimensions).length > 0}
+			<div class="flex flex-wrap items-center gap-1.5">
+				{#each Object.entries(item.dimensions) as [name, value]}
+					<span class="inline-flex items-center whitespace-nowrap rounded-full bg-zinc-700 px-2 py-0.5 text-[10px] font-medium text-zinc-200">
+						{formatFactorLabel(name)}: {value}
+					</span>
+				{/each}
+			</div>
+		{/if}
 	</div>
 
 	<div class="flex flex-1 min-h-0">
