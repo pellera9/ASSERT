@@ -773,7 +773,7 @@ def results_status(suite: str, run: Optional[str], results_dir: Path, as_json: b
     summary.add_column("Value", style="white")
     summary.add_row("Suite", suite)
     summary.add_row("Run", run_summary["run_id"])
-    summary.add_row("Status", label_stage_status(run_summary["status"]))
+    summary.add_row("Status", label_status(run_summary["status"]))
     summary.add_row("Current Stage", label_stage(run_summary["current_stage"]))
     summary.add_row("Started", _format_timestamp(run_summary.get("started_at")))
     summary.add_row("Ended", _format_timestamp(run_summary.get("ended_at")))
