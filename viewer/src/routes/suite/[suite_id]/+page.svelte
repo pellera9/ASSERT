@@ -5,6 +5,7 @@
 	import ResultDrawer from '$lib/ResultDrawer.svelte';
 	import PrimerDropdown from '$lib/PrimerDropdown.svelte';
 	import InfoTooltip from '$lib/components/InfoTooltip.svelte';
+	import ExpandableText from '$lib/ExpandableText.svelte';
 	import { getRecordFlag, getRequiredBaseMetricNames } from '$lib/judgment.js';
 	import { renderMarkdown } from '$lib/markdown.js';
 	import { mergeRunLists, normalizePromptSeeds, normalizeScenarioSeeds, type CombinedRunEntry } from '$lib/suite-view.js';
@@ -731,7 +732,7 @@
 									{#each selectedBehaviorPrompts as seed}
 										<div class="rounded-lg border border-border bg-bg p-3">
 											<div class="mb-1 text-sm font-medium text-text">{seed.title}</div>
-											{#if seed.description}<p class="line-clamp-2 text-xs leading-relaxed text-text-muted">{seed.description}</p>{/if}
+											{#if seed.description}<ExpandableText text={seed.description} class="text-xs leading-relaxed text-text-muted" />{/if}
 										</div>
 									{/each}
 								</div>
@@ -749,7 +750,7 @@
 									{#each selectedBehaviorScenarios as seed}
 										<div class="rounded-lg border border-border bg-bg p-3">
 											<div class="mb-1 text-sm font-medium text-text">{seed.title}</div>
-											{#if seed.description}<p class="line-clamp-2 text-xs leading-relaxed text-text-muted">{seed.description}</p>{/if}
+											{#if seed.description}<ExpandableText text={seed.description} class="text-xs leading-relaxed text-text-muted" />{/if}
 										</div>
 									{/each}
 								</div>

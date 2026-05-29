@@ -15,6 +15,7 @@
 	import ResultDrawer from '$lib/ResultDrawer.svelte';
 	import PrimerDropdown from '$lib/PrimerDropdown.svelte';
 	import InfoTooltip from '$lib/components/InfoTooltip.svelte';
+	import ExpandableText from '$lib/ExpandableText.svelte';
 	import { normalizePromptResult } from '$lib/result-view.js';
 	import {
 		getRecordFlag,
@@ -892,7 +893,7 @@
 						<span class="shrink-0 text-[12px] text-text-muted tabular-nums">{total} prompts</span>
 					</div>
 					{#if m.description}
-					<p class="mt-0.5 !text-[11px] leading-snug text-text-muted line-clamp-2">{m.description}</p>
+					<ExpandableText text={m.description} class="mt-0.5 !text-[11px] leading-snug text-text-muted" />
 					{/if}
 					<div class="mt-3 flex items-baseline gap-1.5">
 						<span class="text-3xl font-bold tabular-nums text-text">{metricRateText(m.summary?.rate ?? 0)}</span>
@@ -1197,7 +1198,7 @@
 						<span class="shrink-0 text-[12px] text-text-muted tabular-nums">{total} scenarios</span>
 					</div>
 					{#if m.description}
-					<p class="mt-0.5 !text-[11px] leading-snug text-text-muted line-clamp-2">{m.description}</p>
+					<ExpandableText text={m.description} class="mt-0.5 !text-[11px] leading-snug text-text-muted" />
 					{/if}
 					<div class="mt-3 flex items-baseline gap-1.5">
 						<span class="text-3xl font-bold tabular-nums text-text">{metricRateText(m.summary?.rate ?? 0)}</span>
