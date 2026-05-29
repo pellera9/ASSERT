@@ -322,8 +322,8 @@ class SystematizationTruncationDetectionTest(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_non_truncation_parse_failure_keeps_original_error(self) -> None:
-        """Without my fix the parse-failure path raised this exact message.
-        That path is preserved verbatim for non-truncation parse failures."""
+        """Prior to issue #131, the parse-failure path raised this exact message.
+        That behavior is preserved verbatim for non-truncation parse failures."""
         async def fake_generate_structured(model, prompt, *, schema_name, json_schema, options):
             del model, prompt, schema_name, json_schema, options
             return ModelResponse(
