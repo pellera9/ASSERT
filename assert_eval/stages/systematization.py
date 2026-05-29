@@ -117,7 +117,7 @@ async def run_systematization(
     Single attempt: a truncated response (finish_reason indicating the
     output budget was exhausted, on either Chat Completions or the
     Responses API) raises a clear actionable error pointing the user at
-    ``systematize.model.max_tokens``. See issue #131 for the original
+    ``pipeline.systematize.model.max_tokens``. See issue #131 for the original
     repro on the travel-planner example, which surfaced as an opaque
     ``json.JSONDecodeError`` because the truncation detector only knew
     about the Chat Completions value.

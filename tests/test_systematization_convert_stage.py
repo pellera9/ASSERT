@@ -416,6 +416,44 @@ class SystematizationConvertTruncationDetectionTest(unittest.IsolatedAsyncioTest
 
         self.assertEqual(seen_max_tokens, [12345, 12345])
 
+    async def test_mixed_truncation_then_non_truncation_uses_transient_message(self) -> None:
+        """Issue #131 PR review: when the LAST attempt was not truncated,
+        prefer the generic transient error so we don't mislead the user
+        into chasing max_tokens. Attempt 1 truncates, attempt 2 returns
+        malformed JSON without truncation (stop) → final error must be
+        the transient model-issue message, NOT the truncation message."""
+        attempts = 0
+
+        async def fake_generate_structured(model, prompt, *, schema_name, json_schema, options):
+            del prompt, schema_name, json_schema, options
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return ModelResponse(
+                    model=model,
+                    text='{"behavior":{"definition":"truncated',
+                    finish_reason="max_output_tokens",
+                )
+            return ModelResponse(model=model, parsed=None, finish_reason="stop", text="garbage")
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            systematization_path = self._write_fixture(tmp_path)
+            with (
+                patch(
+                    "assert_eval.stages.systematization_convert.generate_structured",
+                    new=fake_generate_structured,
+                ),
+                self.assertRaisesRegex(ValueError, "transient model issue"),
+            ):
+                await run_systematization_to_taxonomy(
+                    systematization_path=str(systematization_path),
+                    save_path=str(tmp_path / "taxonomy.json"),
+                    model_cfg=ModelConfig(name="azure/gpt-5.4", max_tokens=10000),
+                )
+
+        self.assertEqual(attempts, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
