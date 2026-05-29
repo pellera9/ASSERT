@@ -45,6 +45,7 @@ export function scenarioStopReasonDisplay(stopReason: string | null | undefined)
 		};
 	}
 	if (stopReason === 'runtime_close_error') {
+		// The conversation completed and remains scorable; the error tone flags cleanup failure.
 		return {
 			label: 'Runtime close error',
 			description: 'The target runtime failed to close cleanly after the conversation ended.',
@@ -63,6 +64,35 @@ export function scenarioStopReasonDisplay(stopReason: string | null | undefined)
 		description: 'The scenario ended before producing a normal completion.',
 		tone: 'info'
 	};
+}
+
+export function stopReasonLabel(
+	stopReason: string | null | undefined,
+	display?: StopReasonDisplay | null
+): string {
+	return display?.label ?? stopReason ?? '';
+}
+
+export function stopReasonTitle(
+	stopReason: string | null | undefined,
+	display?: StopReasonDisplay | null
+): string {
+	if (!stopReason) return display?.description ?? '';
+	if (!display) return stopReason;
+	return `${display.description} Stop reason: ${stopReason}`;
+}
+
+export function stopReasonChipClass(display?: StopReasonDisplay | null): string {
+	if (display?.tone === 'refusal') {
+		return 'rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400';
+	}
+	if (display?.tone === 'error') {
+		return 'rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-400';
+	}
+	if (display?.tone === 'info') {
+		return 'rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-secondary';
+	}
+	return 'rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-muted';
 }
 
 function normalizeMessageRole(role: string): InteractionMessage['role'] {

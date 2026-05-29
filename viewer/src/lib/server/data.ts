@@ -228,6 +228,7 @@ function normalizeJudgedSample(sample: JudgedSample): JudgedSample {
 }
 
 function normalizeAuditScore(score: AuditScore): AuditScore {
+	if (score.metadata?.stop_reason_display != null) return score;
 	const stopReason = typeof score.metadata?.stop_reason === 'string' ? score.metadata.stop_reason : '';
 	return {
 		...score,

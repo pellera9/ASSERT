@@ -10,13 +10,20 @@
 		GroupAxis,
 		MultiJudge,
 		StopReasonDisplay,
+		StopReasonTone,
 		ViewerResultItem
 	} from '$lib/types.js';
 	import { AUDIT_GROUP_AXES, PROMPT_GROUP_AXES, buildFactorAxes, groupByAxis } from '$lib/grouping.js';
 	import ResultDrawer from '$lib/ResultDrawer.svelte';
 	import PrimerDropdown from '$lib/PrimerDropdown.svelte';
 	import InfoTooltip from '$lib/components/InfoTooltip.svelte';
-	import { normalizePromptResult } from '$lib/result-view.js';
+	import ExpandableText from '$lib/ExpandableText.svelte';
+	import {
+		normalizePromptResult,
+		stopReasonChipClass,
+		stopReasonLabel,
+		stopReasonTitle
+	} from '$lib/result-view.js';
 	import {
 		getRecordFlag,
 		getRequiredBaseMetricNames,
@@ -103,22 +110,19 @@
 	);
 
 	// Counts of refused/errored scenarios (covers both scored and preview-only rows)
-	let auditRefusedCount = $derived(
-		data.auditScores.filter(
-			(s) => s.metadata?.stop_reason_display?.tone === 'refusal'
-		).length +
-			(data.inferencePreviewRows ?? []).filter(
-				(r) => r.stop_reason_display?.tone === 'refusal'
-			).length
-	);
-	let auditErroredCount = $derived(
-		data.auditScores.filter(
-			(s) => s.metadata?.stop_reason_display?.tone === 'error'
-		).length +
-			(data.inferencePreviewRows ?? []).filter(
-				(r) => r.stop_reason_display?.tone === 'error'
-			).length
-	);
+	function countStopReasonTone(tone: StopReasonTone): number {
+		const testCaseIds = new Set<string>();
+		for (const score of data.auditScores) {
+			if (score.metadata?.stop_reason_display?.tone === tone) testCaseIds.add(score.test_case_id);
+		}
+		for (const row of data.inferencePreviewRows ?? []) {
+			if (row.stop_reason_display?.tone === tone) testCaseIds.add(row.test_case_id);
+		}
+		return testCaseIds.size;
+	}
+
+	let auditRefusedCount = $derived(countStopReasonTone('refusal'));
+	let auditErroredCount = $derived(countStopReasonTone('error'));
 
 	function metricLabel(metric: string): string {
 		return metric.replace(/_/g, ' ');
@@ -136,28 +140,6 @@
 
 	function metricDotColor(flag: boolean): string {
 		return flag ? 'var(--theme-score-fail)' : 'var(--theme-score-pass)';
-	}
-
-	function stopReasonLabel(stopReason: string, display?: StopReasonDisplay | null): string {
-		return display?.label ?? stopReason;
-	}
-
-	function stopReasonTitle(stopReason: string, display?: StopReasonDisplay | null): string {
-		if (!display) return stopReason;
-		return `${display.description} Stop reason: ${stopReason}`;
-	}
-
-	function stopReasonChipClass(display?: StopReasonDisplay | null): string {
-		if (display?.tone === 'refusal') {
-			return 'rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400';
-		}
-		if (display?.tone === 'error') {
-			return 'rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-400';
-		}
-		if (display?.tone === 'info') {
-			return 'rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-secondary';
-		}
-		return 'rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-muted';
 	}
 
 	function getBehaviorViolated(score: { verdict?: Record<string, unknown> | null }, behaviorName: string): boolean | null {
@@ -194,12 +176,12 @@
 
 	const RUN_STAGE_LABELS: Record<string, string> = {
 		seeds: 'Seed Generation',
-		rollout: 'Inference',
+		inference: 'Inference',
 		judge: 'Scoring',
 	};
 
 	const STAGE_TOOLTIPS: Record<string, string> = {
-		rollout: 'Evaluation test set of prompts and scenarios are sent to target model or agent and responses are recorded.',
+		inference: 'Evaluation test set of prompts and scenarios are sent to target model or agent and responses are recorded.',
 		judge: 'Target responses or behaviors are scored for each judge dimension.',
 	};
 
@@ -941,7 +923,7 @@
 						<span class="shrink-0 text-[12px] text-text-muted tabular-nums">{total} prompts</span>
 					</div>
 					{#if m.description}
-					<p class="mt-0.5 !text-[11px] leading-snug text-text-muted line-clamp-2">{m.description}</p>
+					<ExpandableText text={m.description} class="mt-0.5 !text-[11px] leading-snug text-text-muted" />
 					{/if}
 					<div class="mt-3 flex items-baseline gap-1.5">
 						<span class="text-3xl font-bold tabular-nums text-text">{metricRateText(m.summary?.rate ?? 0)}</span>
@@ -1246,7 +1228,7 @@
 						<span class="shrink-0 text-[12px] text-text-muted tabular-nums">{total} scenarios</span>
 					</div>
 					{#if m.description}
-					<p class="mt-0.5 !text-[11px] leading-snug text-text-muted line-clamp-2">{m.description}</p>
+					<ExpandableText text={m.description} class="mt-0.5 !text-[11px] leading-snug text-text-muted" />
 					{/if}
 					<div class="mt-3 flex items-baseline gap-1.5">
 						<span class="text-3xl font-bold tabular-nums text-text">{metricRateText(m.summary?.rate ?? 0)}</span>
