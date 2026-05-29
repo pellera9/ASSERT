@@ -647,7 +647,7 @@ def results_list(results_dir: Path, suite: Optional[str], as_json: bool, no_colo
             target_model = prompt_metrics.get("target") or scenario_metrics.get("target") or "-"
             table.add_row(
                 run_summary["run_id"],
-                label_stage_status(run_summary["status"]),
+                label_status(run_summary["status"]),
                 _format_timestamp(run_summary.get("started_at")),
                 _fmt_percent(_dimension_rate(prompt_metrics, "policy_violation")),
                 _fmt_percent(_dimension_rate(prompt_metrics, "overrefusal")),
