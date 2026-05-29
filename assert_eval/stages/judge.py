@@ -130,9 +130,9 @@ async def run_judge(
         if _should_skip_scoring(stop_reason):
             # Refused/errored runs have no meaningful target output to
             # judge. Emit a `scoring_skipped` row so the test case isn't
-            # lost, downstream rates skip it (anything != "ok" is already
-            # excluded), and we don't burn judge tokens on an empty
-            # transcript. Mirrors the `filter_skipped` precedent below.
+            # lost, downstream rates skip it, and we don't burn judge
+            # tokens on an empty transcript. These rows are deliberate
+            # skips, not judge failures.
             skipped: dict[str, Any] = {
                 "type": row.get("type", ""),
                 "test_case_id": row.get("test_case_id", ""),
@@ -443,7 +443,7 @@ async def run_judge(
             raise errors[0]
 
     judge_failures = sum(
-        1 for row in load_jsonl(scores_path) if infer_judge_status(row) != "ok"
+        1 for row in load_jsonl(scores_path) if infer_judge_status(row) == "judge_failed"
     )
     return {
         "scores_path": str(scores_path),

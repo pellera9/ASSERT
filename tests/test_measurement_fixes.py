@@ -854,6 +854,10 @@ class MeasurementFixesTest(unittest.TestCase):
             infer_judge_status({"judge_status": "ok", "verdict": {"error": "judge_failed"}}),
             "judge_failed",
         )
+        self.assertEqual(
+            infer_judge_status({"judge_status": "scoring_skipped", "verdict": {}}),
+            "scoring_skipped",
+        )
 
     def test_run_judge_writes_minimal_rows(self) -> None:
         async def fake_run_judge_attempts(*args: object, **kwargs: object) -> tuple[list[dict[str, object]], list[str], int]:
@@ -1010,6 +1014,7 @@ class MeasurementFixesTest(unittest.TestCase):
 
         self.assertEqual(len(attempt_calls), 3)
         self.assertEqual(result["count"], 3)
+        self.assertEqual(result["judge_failures"], 1)
         self.assertEqual(len(score_rows), 3)
 
         by_test_case = {row["test_case_id"]: row for row in score_rows}
@@ -1126,6 +1131,7 @@ class MeasurementFixesTest(unittest.TestCase):
 
         # Every test case still gets a row (none are lost).
         self.assertEqual(result["count"], len(unscorable) + len(scorable))
+        self.assertEqual(result["judge_failures"], 0)
         self.assertEqual(len(score_rows), len(unscorable) + len(scorable))
         # The judge LLM is invoked only for the scorable rows.
         self.assertEqual(len(attempt_calls), len(scorable))
