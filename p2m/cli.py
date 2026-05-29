@@ -743,7 +743,7 @@ def results_status(suite: str, run: Optional[str], results_dir: Path, as_json: b
                 scenario_metrics = run_summary.get("scenario_metrics") or {}
                 table.add_row(
                     run_summary["run_id"],
-                    label_stage_status(run_summary["status"]),
+                    label_status(run_summary["status"]),
                     label_stage(run_summary["current_stage"]),
                     _fmt_percent(_dimension_rate(prompt_metrics, "policy_violation")),
                     _fmt_percent(_dimension_rate(prompt_metrics, "overrefusal")),
