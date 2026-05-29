@@ -10,7 +10,6 @@
 		GroupAxis,
 		MultiJudge,
 		StopReasonDisplay,
-		StopReasonTone,
 		ViewerResultItem
 	} from '$lib/types.js';
 	import { AUDIT_GROUP_AXES, PROMPT_GROUP_AXES, buildFactorAxes, groupByAxis } from '$lib/grouping.js';
@@ -109,20 +108,39 @@
 		data.auditScores.filter(s => judgeStatus(s) === 'judge_failed').length
 	);
 
-	// Counts of refused/errored scenarios (covers both scored and preview-only rows)
-	function countStopReasonTone(tone: StopReasonTone): number {
+	type SkippedStopReasonKind = 'refusal' | 'error';
+
+	const SCORING_SKIPPED_STOP_REASON_KIND: Record<string, SkippedStopReasonKind> = {
+		tester_input_refused: 'refusal',
+		target_input_refused: 'refusal',
+		target_error: 'error',
+		tester_error: 'error'
+	};
+
+	function skippedStopReasonKind(stopReason: string | null | undefined): SkippedStopReasonKind | null {
+		if (!stopReason) return null;
+		return SCORING_SKIPPED_STOP_REASON_KIND[stopReason] ?? null;
+	}
+
+	// Counts refused/errored rows that are skipped by the judge and excluded from rates.
+	function countSkippedStopReasonKind(kind: SkippedStopReasonKind): number {
 		const testCaseIds = new Set<string>();
 		for (const score of data.auditScores) {
-			if (score.metadata?.stop_reason_display?.tone === tone) testCaseIds.add(score.test_case_id);
+			if (
+				judgeStatus(score) === 'scoring_skipped' &&
+				skippedStopReasonKind(score.metadata?.stop_reason) === kind
+			) {
+				testCaseIds.add(score.test_case_id);
+			}
 		}
 		for (const row of data.inferencePreviewRows ?? []) {
-			if (row.stop_reason_display?.tone === tone) testCaseIds.add(row.test_case_id);
+			if (skippedStopReasonKind(row.stop_reason) === kind) testCaseIds.add(row.test_case_id);
 		}
 		return testCaseIds.size;
 	}
 
-	let auditRefusedCount = $derived(countStopReasonTone('refusal'));
-	let auditErroredCount = $derived(countStopReasonTone('error'));
+	let auditRefusedCount = $derived(countSkippedStopReasonKind('refusal'));
+	let auditErroredCount = $derived(countSkippedStopReasonKind('error'));
 
 	function metricLabel(metric: string): string {
 		return metric.replace(/_/g, ' ');
