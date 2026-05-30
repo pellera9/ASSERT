@@ -34,7 +34,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { stringify as stringifyYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import {
 	isSafeArtifactId,
 	requireSafeId,
@@ -161,10 +161,17 @@ interface WizardPayload {
 	};
 	suiteId?: string;
 	runId?: string;
-	toolsMode?: 'simulated' | 'real';
-	simulatedToolsDescription?: string;
-	realToolsYaml?: string;
-	realToolsFileName?: string;
+	// Prompt Agent (target.model + target.tools) tool configuration.
+	//   generated → target.tools.simulator + test_set.tool_source: per_test_case
+	//   simulated → uploaded toolset YAML + simulator (test_set.tool_source: runtime)
+	//   real      → uploaded Python tool backend module (test_set.tool_source: runtime)
+	toolsMode?: 'generated' | 'simulated' | 'real';
+	simulatorModel?: string;
+	toolsetYaml?: string;
+	toolsetFileName?: string;
+	toolModuleCode?: string;
+	toolModuleFileName?: string;
+	toolsAcknowledged?: boolean;
 }
 
 // ─── Normalize ─────────────────────────────────────────────────────────
@@ -175,12 +182,23 @@ export interface NormalizedRun {
 	behaviorName: string;
 	configObject: Record<string, unknown>;
 	warnings: string[];
+	// Extra files (uploaded tool definitions / Python tool backends) to write
+	// into the run directory alongside eval_config.yaml. Names are server-decided
+	// constants — never derived from client input — so they can be referenced by
+	// relative path from the config (resolved relative to the run dir).
+	extraFiles: Array<{ name: string; content: string }>;
 }
 
 const DEFAULT_BEHAVIOR_CATEGORY_COUNT = 6;
 const RUN_EVAL_CONFIG_FILE = 'eval_config.yaml';
 const RUN_LOG_FILE = 'runner.log';
 const RUN_PID_FILE = 'runner.pid';
+
+// Server-decided filenames for uploaded tool artifacts. Both are resolved by the
+// runner relative to the config directory (the run dir).
+const TOOLSET_FILE = 'target_tools.yaml';
+const TOOL_MODULE_FILE = 'target_tools.py';
+const MAX_TOOL_UPLOAD_BYTES = 256 * 1024;
 
 export function normalizeWizardPayload(raw: unknown): NormalizedRun {
 	const errors: string[] = [];
@@ -227,26 +245,72 @@ export function normalizeWizardPayload(raw: unknown): NormalizedRun {
 	if (evaluationTarget !== 'model' && evaluationTarget !== 'agent') {
 		errors.push('evaluationTarget must be "model" or "agent".');
 	}
-	if (evaluationTarget === 'agent') {
-		errors.push(
-			'evaluationTarget "agent" is not yet supported by the UI submit path. ' +
-				'The wizard does not collect a Python callable target. ' +
-				'For now, run agent evaluations via the CLI: `assert-eval run --config <config.yaml>`.'
-		);
-	}
 
-	// ── Tools ──
-	const toolsMode = payload.toolsMode;
-	const simulatedToolsText = trimOrEmpty(payload.simulatedToolsDescription);
-	if (toolsMode === 'real') {
-		errors.push(
-			'Uploaded "real tools" YAML is not yet wired through. ' +
-				'The current backend only accepts {module, toolset, simulator} tool descriptors, ' +
-				'and the wizard does not yet capture them. ' +
-				'Toggle "Simulated tools" or omit tools for this submission.'
-		);
-	} else if (toolsMode !== undefined && toolsMode !== 'simulated') {
-		errors.push('toolsMode must be "simulated" or "real".');
+	// ── Tools (Prompt Agent target.model + target.tools) ──
+	// Produces the inference.target.tools block, the test_set.tool_source value,
+	// any uploaded files to write into the run dir, and (for simulated tools) a
+	// concise tool summary appended to context so test-case generation knows
+	// which tools the agent exposes.
+	let toolsBlock: Record<string, unknown> | undefined;
+	let toolSource: string | undefined;
+	let toolContextSummary = '';
+	const extraFiles: Array<{ name: string; content: string }> = [];
+
+	if (evaluationTarget === 'agent') {
+		const toolsMode = payload.toolsMode;
+		const simulatorModel = trimOrEmpty(payload.simulatorModel);
+		if (toolsMode === 'generated') {
+			if (!simulatorModel) {
+				errors.push('toolsMode "generated" requires a simulator model.');
+			}
+			// per_test_case tools are produced by test-set generation, so a freshly
+			// generated test set is required. Existing test sets do not carry tools.
+			if (payload.source !== 'new') {
+				errors.push(
+					'toolsMode "generated" requires generating a new test set (source "new"). ' +
+						'Existing test sets do not include per-test-case tool definitions.'
+				);
+			}
+			toolsBlock = { simulator: simulatorModel };
+			toolSource = 'per_test_case';
+		} else if (toolsMode === 'simulated') {
+			if (!simulatorModel) {
+				errors.push('toolsMode "simulated" requires a simulator model.');
+			}
+			const yamlText = typeof payload.toolsetYaml === 'string' ? payload.toolsetYaml : '';
+			const yamlBytes = Buffer.byteLength(yamlText, 'utf-8');
+			if (yamlText && yamlBytes > MAX_TOOL_UPLOAD_BYTES) {
+				errors.push(`Tool definitions file exceeds the ${MAX_TOOL_UPLOAD_BYTES / 1024} KB upload limit.`);
+			} else if (yamlText.trim()) {
+				toolContextSummary = validateToolsetYaml(yamlText, errors);
+				extraFiles.push({ name: TOOLSET_FILE, content: yamlText });
+			} else {
+				toolContextSummary = validateToolsetYaml(yamlText, errors);
+			}
+			toolsBlock = { toolset: TOOLSET_FILE, simulator: simulatorModel };
+			toolSource = 'runtime';
+		} else if (toolsMode === 'real') {
+			const code = typeof payload.toolModuleCode === 'string' ? payload.toolModuleCode : '';
+			if (!code.trim()) {
+				errors.push('toolsMode "real" requires uploading a Python tool backend file.');
+			} else if (Buffer.byteLength(code, 'utf-8') > MAX_TOOL_UPLOAD_BYTES) {
+				errors.push(`Python tool file exceeds the ${MAX_TOOL_UPLOAD_BYTES / 1024} KB upload limit.`);
+			} else {
+				extraFiles.push({ name: TOOL_MODULE_FILE, content: code });
+			}
+			// The uploaded Python module is executed by the runner. Require an explicit
+			// server-validated acknowledgement — a client-side checkbox is not a gate.
+			if (payload.toolsAcknowledged !== true) {
+				errors.push(
+					'toolsMode "real" requires acknowledging that the uploaded Python tool ' +
+						'backend will be executed during evaluation.'
+				);
+			}
+			toolsBlock = { module: TOOL_MODULE_FILE };
+			toolSource = 'runtime';
+		} else {
+			errors.push('toolsMode must be "generated", "simulated", or "real" for a Prompt Agent target.');
+		}
 	}
 
 	// ── Context ──
@@ -358,8 +422,8 @@ export function normalizeWizardPayload(raw: unknown): NormalizedRun {
 	// Single-YAML authoring model — full markdown description lives inline.
 	config.behavior = { name: behaviorName, description: behaviorDefinition };
 
-	const contextWithTools = simulatedToolsText
-		? `${applicationContext}\n\nTools available to the agent (simulated):\n${simulatedToolsText}`
+	const contextWithTools = toolContextSummary
+		? `${applicationContext}\n\nTools available to the agent (simulated):\n${toolContextSummary}`
 		: applicationContext;
 	config.context = contextWithTools;
 
@@ -392,6 +456,9 @@ export function normalizeWizardPayload(raw: unknown): NormalizedRun {
 	// test_set: prompt for query test cases, scenario for scenario test cases,
 	// stratify for dimension cross-product.
 	const testSetBlock: Record<string, unknown> = {};
+	if (toolSource) {
+		testSetBlock.tool_source = toolSource;
+	}
 	if (dimensionsBlock && dimensionsBlock.length > 0) {
 		testSetBlock.stratify = {
 			dimensions: dimensionsBlock,
@@ -430,6 +497,9 @@ export function normalizeWizardPayload(raw: unknown): NormalizedRun {
 	const trimmedSystemPrompt = trimOrEmpty(payload.systemPrompt);
 	if (trimmedSystemPrompt) {
 		inferenceTarget.system_prompt = trimmedSystemPrompt;
+	}
+	if (toolsBlock) {
+		inferenceTarget.tools = toolsBlock;
 	}
 
 	const inferenceBlock: Record<string, unknown> = { target: inferenceTarget };
@@ -501,7 +571,8 @@ export function normalizeWizardPayload(raw: unknown): NormalizedRun {
 		run,
 		behaviorName,
 		configObject: config,
-		warnings
+		warnings,
+		extraFiles
 	};
 }
 
@@ -546,6 +617,16 @@ export function writeRunConfigFiles(normalized: NormalizedRun): WrittenRun {
 	const yamlText = stringifyYaml(normalized.configObject, { lineWidth: 0 });
 	fs.writeFileSync(configPath, yamlText, { encoding: 'utf-8' });
 
+	// Write uploaded tool artifacts (toolset YAML / Python tool backend) next to
+	// the config. Names are server-decided constants; reject anything path-like as
+	// defense-in-depth so a future caller can't smuggle in a traversal.
+	for (const file of normalized.extraFiles) {
+		if (!file.name || file.name.includes('/') || file.name.includes('\\') || file.name.includes('..')) {
+			throw new Error(`Refusing to write tool artifact with unsafe name: ${file.name}`);
+		}
+		fs.writeFileSync(path.join(runDir, file.name), file.content, { encoding: 'utf-8' });
+	}
+
 	return { runDir, configPath, logPath, pidPath };
 }
 
@@ -563,9 +644,47 @@ interface ResolvedCommand {
 	source: string;
 }
 
+/**
+ * Locate a binary inside a virtualenv's bin/Scripts directory.
+ * Returns the first existing candidate path, or undefined.
+ */
+function venvBin(venv: string, name: string): string | undefined {
+	const candidates =
+		os.platform() === 'win32'
+			? [path.join(venv, 'Scripts', `${name}.exe`), path.join(venv, 'Scripts', name)]
+			: [path.join(venv, 'bin', name)];
+	return candidates.find((candidate) => fs.existsSync(candidate));
+}
+
+/**
+ * Candidate virtualenv directories, in priority order. The viewer is meant to
+ * "just run" from the UI even when the dev server wasn't launched inside an
+ * activated venv, so we discover a project-local `.venv`/`venv` next to the
+ * repo root in addition to honoring an externally-activated VIRTUAL_ENV.
+ */
+function candidateVenvDirs(): string[] {
+	const dirs: string[] = [];
+	const seen = new Set<string>();
+	const add = (dir: string | undefined | null) => {
+		if (dir && !seen.has(dir) && fs.existsSync(dir)) {
+			seen.add(dir);
+			dirs.push(dir);
+		}
+	};
+	add(process.env.VIRTUAL_ENV);
+	add(path.join(MEASUREMENTS_ROOT, '.venv'));
+	add(path.join(MEASUREMENTS_ROOT, 'venv'));
+	return dirs;
+}
+
 function resolveAssertEvalCommand(configPath: string): ResolvedCommand {
 	const cliArgs = ['run', '--config', configPath];
+	// Module invocation is the reliable form: it works even when the `assert-eval`
+	// console script was never (re)generated for a venv — e.g. after the package
+	// was renamed and only an older console script remains on disk.
+	const moduleArgs = ['-m', 'assert_eval.cli', ...cliArgs];
 
+	// 1. Explicit override always wins.
 	const override = process.env.ASSERT_EVAL_COMMAND;
 	if (override && override.trim()) {
 		const parts = override.trim().split(/\s+/);
@@ -576,25 +695,63 @@ function resolveAssertEvalCommand(configPath: string): ResolvedCommand {
 		};
 	}
 
-	const venv = process.env.VIRTUAL_ENV;
-	if (venv) {
-		const cliCandidates =
-			os.platform() === 'win32'
-				? [path.join(venv, 'Scripts', 'assert-eval.exe'), path.join(venv, 'Scripts', 'assert-eval')]
-				: [path.join(venv, 'bin', 'assert-eval')];
-		const cliPath = cliCandidates.find((candidate) => fs.existsSync(candidate));
-		if (cliPath) {
-			return {
-				command: cliPath,
-				args: cliArgs,
-				source: `VIRTUAL_ENV (${cliPath})`
-			};
+	// 2. Discover a project virtualenv. Prefer its console script; otherwise run
+	//    the CLI as a module through the venv's Python so a missing/renamed
+	//    console script doesn't block the run.
+	for (const venv of candidateVenvDirs()) {
+		const script = venvBin(venv, 'assert-eval');
+		if (script) {
+			return { command: script, args: cliArgs, source: `venv script (${script})` };
+		}
+		const python = venvBin(venv, 'python');
+		if (python) {
+			return { command: python, args: moduleArgs, source: `venv module (${python})` };
 		}
 	}
 
-	// Fallback: PATH lookup. On Windows, .exe extension is resolved automatically
-	// by spawn when shell:false because Node uses CreateProcess search behavior.
-	return { command: 'assert-eval', args: cliArgs, source: 'PATH' };
+	// 3. PATH console script. On Windows, .exe is resolved automatically by spawn
+	//    when shell:false because Node uses CreateProcess search behavior.
+	const pathScript = os.platform() === 'win32' ? 'assert-eval.exe' : 'assert-eval';
+	if (commandExistsOnPath(pathScript) || commandExistsOnPath('assert-eval')) {
+		return { command: 'assert-eval', args: cliArgs, source: 'PATH (assert-eval)' };
+	}
+
+	// 4. Last resort: a Python on PATH running the CLI as a module.
+	const pathPython = os.platform() === 'win32' ? 'python.exe' : 'python3';
+	if (commandExistsOnPath(pathPython) || commandExistsOnPath('python')) {
+		const python = commandExistsOnPath(pathPython) ? pathPython : 'python';
+		return { command: python, args: moduleArgs, source: `PATH (${python} -m assert_eval.cli)` };
+	}
+
+	// Nothing discoverable — fall back to the bare console script so the spawn
+	// failure surfaces a clear ENOENT with the guidance in SpawnError.
+	return { command: 'assert-eval', args: cliArgs, source: 'PATH (fallback)' };
+}
+
+/**
+ * Best-effort check for whether a command is resolvable on PATH, without
+ * spawning it. Scans PATH entries (plus PATHEXT on Windows) for an executable.
+ */
+function commandExistsOnPath(command: string): boolean {
+	if (command.includes(path.sep) || command.includes('/')) {
+		return fs.existsSync(command);
+	}
+	const pathEntries = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+	const exts =
+		os.platform() === 'win32'
+			? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)
+			: [''];
+	const hasKnownExt = path.extname(command) !== '';
+	for (const dir of pathEntries) {
+		if (hasKnownExt) {
+			if (fs.existsSync(path.join(dir, command))) return true;
+			continue;
+		}
+		for (const ext of exts) {
+			if (fs.existsSync(path.join(dir, command + ext))) return true;
+		}
+	}
+	return false;
 }
 
 /**
@@ -764,6 +921,89 @@ function requireModel(errors: string[], field: string, value: unknown) {
 	if (!trimOrEmpty(value)) {
 		errors.push(`${field} is required. Configure a model in your environment or add one in the wizard.`);
 	}
+}
+
+/**
+ * Validate an uploaded simulated-tools definition file. Accepts the same shape
+ * the runner's `load_toolset_file` accepts: a list of tool definitions, or a
+ * mapping with a non-empty `tools` list. Each tool must be a mapping with a
+ * non-empty `name`. Pushes a precise error on any problem and returns a concise
+ * "- name: description" summary used to ground test-case generation.
+ */
+function validateToolsetYaml(text: string, errors: string[]): string {
+	if (!text.trim()) {
+		errors.push('toolsMode "simulated" requires uploading a tool definitions YAML file.');
+		return '';
+	}
+	let data: unknown;
+	try {
+		data = parseYaml(text);
+	} catch (err) {
+		errors.push(`Tool definitions file is not valid YAML: ${(err as Error).message ?? String(err)}`);
+		return '';
+	}
+	let list: unknown = data;
+	if (data && typeof data === 'object' && !Array.isArray(data) && 'tools' in (data as Record<string, unknown>)) {
+		list = (data as Record<string, unknown>).tools;
+	}
+	if (!Array.isArray(list) || list.length === 0) {
+		errors.push(
+			'Tool definitions file must be a non-empty list of tools, or a mapping with a non-empty "tools" list.'
+		);
+		return '';
+	}
+	const lines: string[] = [];
+	for (const entry of list) {
+		if (!isRecord(entry)) {
+			errors.push('Each tool definition must be a mapping with a non-empty "name".');
+			return '';
+		}
+		if (typeof entry.name !== 'string' || !entry.name.trim()) {
+			errors.push('Each tool definition must be a mapping with a non-empty "name".');
+			return '';
+		}
+		const name = entry.name.trim();
+		const schemaError = validateToolSchema(entry, name);
+		if (schemaError) {
+			errors.push(schemaError);
+			return '';
+		}
+		const descRaw = entry.description;
+		const desc = typeof descRaw === 'string' ? descRaw.trim() : '';
+		lines.push(desc ? `- ${name}: ${desc}` : `- ${name}`);
+	}
+	return lines.join('\n');
+}
+
+function validateToolSchema(tool: Record<string, unknown>, name: string): string | null {
+	if ('input_schema' in tool) {
+		const schema = tool.input_schema;
+		if (!isRecord(schema)) {
+			return `Tool "${name}" input_schema must be a mapping.`;
+		}
+		if (schema.type !== 'object') {
+			return `Tool "${name}" input_schema must be a JSON object schema.`;
+		}
+		return null;
+	}
+
+	if ('parameters' in tool) {
+		const params = tool.parameters;
+		if (!Array.isArray(params)) {
+			return `Tool "${name}" parameters must be a list.`;
+		}
+		for (const param of params) {
+			if (!isRecord(param) || typeof param.name !== 'string' || !param.name.trim()) {
+				return `Tool "${name}" parameters must be objects with a non-empty "name".`;
+			}
+		}
+	}
+
+	return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function buildDimensionsBlock(
