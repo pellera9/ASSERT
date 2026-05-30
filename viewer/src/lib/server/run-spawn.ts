@@ -641,9 +641,47 @@ interface ResolvedCommand {
 	source: string;
 }
 
+/**
+ * Locate a binary inside a virtualenv's bin/Scripts directory.
+ * Returns the first existing candidate path, or undefined.
+ */
+function venvBin(venv: string, name: string): string | undefined {
+	const candidates =
+		os.platform() === 'win32'
+			? [path.join(venv, 'Scripts', `${name}.exe`), path.join(venv, 'Scripts', name)]
+			: [path.join(venv, 'bin', name)];
+	return candidates.find((candidate) => fs.existsSync(candidate));
+}
+
+/**
+ * Candidate virtualenv directories, in priority order. The viewer is meant to
+ * "just run" from the UI even when the dev server wasn't launched inside an
+ * activated venv, so we discover a project-local `.venv`/`venv` next to the
+ * repo root in addition to honoring an externally-activated VIRTUAL_ENV.
+ */
+function candidateVenvDirs(): string[] {
+	const dirs: string[] = [];
+	const seen = new Set<string>();
+	const add = (dir: string | undefined | null) => {
+		if (dir && !seen.has(dir) && fs.existsSync(dir)) {
+			seen.add(dir);
+			dirs.push(dir);
+		}
+	};
+	add(process.env.VIRTUAL_ENV);
+	add(path.join(MEASUREMENTS_ROOT, '.venv'));
+	add(path.join(MEASUREMENTS_ROOT, 'venv'));
+	return dirs;
+}
+
 function resolveAssertEvalCommand(configPath: string): ResolvedCommand {
 	const cliArgs = ['run', '--config', configPath];
+	// Module invocation is the reliable form: it works even when the `assert-eval`
+	// console script was never (re)generated for a venv — e.g. after the package
+	// was renamed and only an older console script remains on disk.
+	const moduleArgs = ['-m', 'assert_eval.cli', ...cliArgs];
 
+	// 1. Explicit override always wins.
 	const override = process.env.ASSERT_EVAL_COMMAND;
 	if (override && override.trim()) {
 		const parts = override.trim().split(/\s+/);
@@ -654,25 +692,63 @@ function resolveAssertEvalCommand(configPath: string): ResolvedCommand {
 		};
 	}
 
-	const venv = process.env.VIRTUAL_ENV;
-	if (venv) {
-		const cliCandidates =
-			os.platform() === 'win32'
-				? [path.join(venv, 'Scripts', 'assert-eval.exe'), path.join(venv, 'Scripts', 'assert-eval')]
-				: [path.join(venv, 'bin', 'assert-eval')];
-		const cliPath = cliCandidates.find((candidate) => fs.existsSync(candidate));
-		if (cliPath) {
-			return {
-				command: cliPath,
-				args: cliArgs,
-				source: `VIRTUAL_ENV (${cliPath})`
-			};
+	// 2. Discover a project virtualenv. Prefer its console script; otherwise run
+	//    the CLI as a module through the venv's Python so a missing/renamed
+	//    console script doesn't block the run.
+	for (const venv of candidateVenvDirs()) {
+		const script = venvBin(venv, 'assert-eval');
+		if (script) {
+			return { command: script, args: cliArgs, source: `venv script (${script})` };
+		}
+		const python = venvBin(venv, 'python');
+		if (python) {
+			return { command: python, args: moduleArgs, source: `venv module (${python})` };
 		}
 	}
 
-	// Fallback: PATH lookup. On Windows, .exe extension is resolved automatically
-	// by spawn when shell:false because Node uses CreateProcess search behavior.
-	return { command: 'assert-eval', args: cliArgs, source: 'PATH' };
+	// 3. PATH console script. On Windows, .exe is resolved automatically by spawn
+	//    when shell:false because Node uses CreateProcess search behavior.
+	const pathScript = os.platform() === 'win32' ? 'assert-eval.exe' : 'assert-eval';
+	if (commandExistsOnPath(pathScript) || commandExistsOnPath('assert-eval')) {
+		return { command: 'assert-eval', args: cliArgs, source: 'PATH (assert-eval)' };
+	}
+
+	// 4. Last resort: a Python on PATH running the CLI as a module.
+	const pathPython = os.platform() === 'win32' ? 'python.exe' : 'python3';
+	if (commandExistsOnPath(pathPython) || commandExistsOnPath('python')) {
+		const python = commandExistsOnPath(pathPython) ? pathPython : 'python';
+		return { command: python, args: moduleArgs, source: `PATH (${python} -m assert_eval.cli)` };
+	}
+
+	// Nothing discoverable — fall back to the bare console script so the spawn
+	// failure surfaces a clear ENOENT with the guidance in SpawnError.
+	return { command: 'assert-eval', args: cliArgs, source: 'PATH (fallback)' };
+}
+
+/**
+ * Best-effort check for whether a command is resolvable on PATH, without
+ * spawning it. Scans PATH entries (plus PATHEXT on Windows) for an executable.
+ */
+function commandExistsOnPath(command: string): boolean {
+	if (command.includes(path.sep) || command.includes('/')) {
+		return fs.existsSync(command);
+	}
+	const pathEntries = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+	const exts =
+		os.platform() === 'win32'
+			? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)
+			: [''];
+	const hasKnownExt = path.extname(command) !== '';
+	for (const dir of pathEntries) {
+		if (hasKnownExt) {
+			if (fs.existsSync(path.join(dir, command))) return true;
+			continue;
+		}
+		for (const ext of exts) {
+			if (fs.existsSync(path.join(dir, command + ext))) return true;
+		}
+	}
+	return false;
 }
 
 /**
