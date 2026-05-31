@@ -44,32 +44,20 @@ From the natural language specification, the ASSERT pipeline derives behavior ca
 
 ## Get started
 
-<div align="center" style="display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 12px; margin-bottom: 4px;">
-        <a href="https://aka.ms/assert-ghpage" style="text-decoration: none; color: inherit; width: 240px;">
-                <div style="border: 1px solid #d0d7de; border-radius: 12px; padding: 14px; text-align: left; height: 100%; box-sizing: border-box;">
-                        <strong>🌐 Project website ↗</strong><br/>
-                        <span>Learn about ASSERT.</span>
-                </div>
-        </a>
-        <a href="https://aka.ms/assert" style="text-decoration: none; color: inherit; width: 240px;">
-                <div style="border: 1px solid #d0d7de; border-radius: 12px; padding: 14px; text-align: left; height: 100%; box-sizing: border-box;">
-                        <strong>📝 Technical blog ↗</strong><br/>
-                        <span>Read the Command Line post.</span>
-                </div>
-        </a>
-        <a href="docs/getting-started.md" style="text-decoration: none; color: inherit; width: 240px;">
-                <div style="border: 1px solid #d0d7de; border-radius: 12px; padding: 14px; text-align: left; height: 100%; box-sizing: border-box;">
-                        <strong>🚀 Quickstart guide ↗</strong><br/>
-                        <span>Follow the full walkthrough.</span>
-                </div>
-        </a>
-        <a href="https://aka.ms/assert-docs" style="text-decoration: none; color: inherit; width: 240px;">
-                <div style="border: 1px solid #d0d7de; border-radius: 12px; padding: 14px; text-align: left; height: 100%; box-sizing: border-box;">
-                        <strong>📚 Documentation ↗</strong><br/>
-                        <span>Browse concepts and guides.</span>
-                </div>
-        </a>
-</div>
+<table align="center" style="width: 100%; border: 1px solid #d0d7de; border-collapse: collapse;">
+        <tr>
+                <th style="border: 1px solid #d0d7de; padding: 10px; text-align: left;">🌐 Project website ↗</th>
+                <th style="border: 1px solid #d0d7de; padding: 10px; text-align: left;">📝 Technical blog ↗</th>
+                <th style="border: 1px solid #d0d7de; padding: 10px; text-align: left;">🚀 Quickstart guide ↗</th>
+                <th style="border: 1px solid #d0d7de; padding: 10px; text-align: left;">📚 Documentation ↗</th>
+        </tr>
+        <tr>
+                <td style="border: 1px solid #d0d7de; padding: 10px;"><a href="https://aka.ms/assert-ghpage">Learn about ASSERT</a></td>
+                <td style="border: 1px solid #d0d7de; padding: 10px;"><a href="https://aka.ms/assert">Read the Command Line post</a></td>
+                <td style="border: 1px solid #d0d7de; padding: 10px;"><a href="docs/getting-started.md">Follow the full walkthrough</a></td>
+                <td style="border: 1px solid #d0d7de; padding: 10px;"><a href="https://aka.ms/assert-docs">Browse concepts and guides</a></td>
+        </tr>
+</table>
 
 ## Trademarks
 
