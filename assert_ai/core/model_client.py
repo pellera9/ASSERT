@@ -3,7 +3,7 @@
 
 """LiteLLM-backed model helpers for the measurements pipeline.
 
-Import side effects (intentional for the ``assert-eval`` CLI):
+Import side effects (intentional for the ``assert-ai`` CLI):
 
 * ``_normalize_azure_api_base()`` rewrites ``AZURE_API_BASE`` at import
   time to strip any ``/openai/...`` path suffix, logging at INFO when
@@ -201,7 +201,7 @@ class UsageAccumulator:
 
 
 _USAGE_ACCUMULATOR: contextvars.ContextVar[UsageAccumulator | None] = contextvars.ContextVar(
-    "_assert_eval_usage_accumulator",
+    "_assert_ai_usage_accumulator",
     default=None,
 )
 
@@ -509,7 +509,7 @@ def build_llm_call_trace(response: ModelResponse, *, source: str) -> dict[str, A
 
     Sanitizes request payloads to prevent credential leakage in artifact files.
     """
-    from assert_eval.core.security import sanitize_payload
+    from assert_ai.core.security import sanitize_payload
 
     return {
         "source": source,
@@ -598,7 +598,7 @@ def _get_litellm_module() -> Any:
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "litellm is not installed. Install it with `python -m pip install litellm` "
-                "before using assert_eval.core.model_client."
+                "before using assert_ai.core.model_client."
             ) from exc
         # Silence noisy litellm warnings that pollute stderr
         _LITELLM_MODULE.suppress_debug_info = True

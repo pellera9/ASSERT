@@ -11,13 +11,13 @@ from typing import Any, Dict
 
 log = logging.getLogger(__name__)
 
-from assert_eval.config import parse_model_config, resolve_stage_paths
-from assert_eval.core.config_model import (
+from assert_ai.config import parse_model_config, resolve_stage_paths
+from assert_ai.core.config_model import (
     DEFAULT_SYSTEMATIZE_MAX_TOKENS,
     DEFAULT_SYSTEMATIZE_TEMPERATURE,
 )
-from assert_eval.core.io import load_prompt_text, write_json
-from assert_eval.core.model_client import GenerateOptions, Message, generate_structured
+from assert_ai.core.io import load_prompt_text, write_json
+from assert_ai.core.model_client import GenerateOptions, Message, generate_structured
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 GEN_PROMPT = load_prompt_text("systematize_system.md")
@@ -173,10 +173,10 @@ async def run(ctx: dict[str, Any], raw_cfg: dict[str, Any]) -> dict[str, Any]:
     behavior_description = ctx.get("behavior") or ""
     context = ctx.get("context")
 
-    from assert_eval.core.async_utils import log_heartbeat
-    from assert_eval.core.config_model import ModelConfig as SysModelConfig
-    from assert_eval.stages.systematization import run_systematization
-    from assert_eval.stages.systematization_convert import run_systematization_to_taxonomy
+    from assert_ai.core.async_utils import log_heartbeat
+    from assert_ai.core.config_model import ModelConfig as SysModelConfig
+    from assert_ai.stages.systematization import run_systematization
+    from assert_ai.stages.systematization_convert import run_systematization_to_taxonomy
 
     sys_model_cfg = SysModelConfig(
         name=model_cfg.name,

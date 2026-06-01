@@ -1,4 +1,4 @@
-"""Click command definition for ``assert-eval init``."""
+"""Click command definition for ``assert-ai init``."""
 
 from __future__ import annotations
 
@@ -129,8 +129,8 @@ def init(
     from rich.console import Console
     from rich.syntax import Syntax
 
-    from assert_eval.init._design_agent import run_design_loop
-    from assert_eval.init._emit import emit_config
+    from assert_ai.init._design_agent import run_design_loop
+    from assert_ai.init._emit import emit_config
 
     # Load env vars for LLM credentials
     if env_file.exists():
@@ -180,7 +180,7 @@ def init(
 
     emit_config(yaml_result, output, force=force)
     log.info("Written to %s", output)
-    log.info("Next: assert-eval run --config %s", output)
+    log.info("Next: assert-ai run --config %s", output)
 
 
 def _error(message: str) -> None:

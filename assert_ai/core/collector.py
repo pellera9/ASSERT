@@ -6,7 +6,7 @@
 ASSERT's OTel integration depends on this Protocol, not on Phoenix.
 Phoenix is one implementation. Developers can inject any backend.
 
-The canonical span type is OTelSpan (from assert_eval.core.otel) — JSON-native,
+The canonical span type is OTelSpan (from assert_ai.core.otel) — JSON-native,
 no pandas dependency in the critical path.
 """
 
@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from assert_eval.core.otel import OTelSpan
+    from assert_ai.core.otel import OTelSpan
 
 # OpenInference attribute keys for validation
 REQUIRED_ATTRIBUTES = frozenset({
@@ -187,7 +187,7 @@ def _dataframe_to_otel_spans(df: Any) -> list[Any]:
 
     Imports OTelSpan lazily to avoid circular imports at module load.
     """
-    from assert_eval.core.otel import OTelSpan
+    from assert_ai.core.otel import OTelSpan
 
     spans = []
     for _, row in df.iterrows():

@@ -17,7 +17,7 @@ from hashlib import sha1
 from pathlib import Path
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
-from assert_eval.core.async_utils import invoke_callable
+from assert_ai.core.async_utils import invoke_callable
 
 
 def _search_roots(config_path: Path | None) -> list[tuple[str, Path]]:
@@ -41,7 +41,7 @@ def _module_path_candidates(module_ref: str, *, config_path: Path | None) -> lis
 
 
 def _load_module_from_file(module_ref: str, path: Path) -> Any:
-    module_name = f"_assert_eval_module_{sha1(str(path).encode('utf-8')).hexdigest()}"
+    module_name = f"_assert_ai_module_{sha1(str(path).encode('utf-8')).hexdigest()}"
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ValueError(f"Could not load module '{module_ref}' from {path}")
@@ -53,7 +53,7 @@ def _load_module_from_file(module_ref: str, path: Path) -> Any:
 
 @contextlib.contextmanager
 def _temporary_sys_path(path: Path, *, config_path: Path | None = None):
-    from assert_eval.core.security import validate_sys_path_addition
+    from assert_ai.core.security import validate_sys_path_addition
 
     validate_sys_path_addition(path, config_path=config_path)
     sys.path.insert(0, str(path))
@@ -82,7 +82,7 @@ def _module_classes(module: Any) -> list[type[Any]]:
 
 
 def load_tool_module(module_ref: str, *, config_path: Path | None = None) -> Any:
-    from assert_eval.core.security import validate_module_ref
+    from assert_ai.core.security import validate_module_ref
 
     validate_module_ref(module_ref, config_path=config_path)
 
@@ -404,7 +404,7 @@ def _serialize_lifecycle_result(result: Any) -> Any:
 
 
 def _resolution(output: str, tool_name: str, *, session: dict[str, Any] | None = None) -> Any:
-    from assert_eval.core.session import ToolResolution
+    from assert_ai.core.session import ToolResolution
 
     raw = {"call": "tool_module", "tool_name": tool_name}
     if session:

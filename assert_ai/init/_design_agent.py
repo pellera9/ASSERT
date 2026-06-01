@@ -1,4 +1,4 @@
-"""Interactive design-agent loop for ``assert-eval init``.
+"""Interactive design-agent loop for ``assert-ai init``.
 
 Drives a multi-turn conversation with an LLM that follows a three-action
 protocol (ask / propose / done) to collaboratively design an eval config.
@@ -26,10 +26,10 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
 
-from assert_eval.init._context import build_system_message, estimate_tokens, context_window_for
-from assert_eval.init._llm import chat_completion
-from assert_eval.init._validate import validate_proposed_yaml
-from assert_eval.core.model_client import (
+from assert_ai.init._context import build_system_message, estimate_tokens, context_window_for
+from assert_ai.init._llm import chat_completion
+from assert_ai.init._validate import validate_proposed_yaml
+from assert_ai.core.model_client import (
     LLMAuthError,
     LLMInputError,
     LLMProviderError,

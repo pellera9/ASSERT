@@ -26,10 +26,10 @@ import uuid
 from contextlib import nullcontext
 from typing import Any
 
-from assert_eval.core.async_utils import invoke_callable
-from assert_eval.core.collector import SpanCollector
-from assert_eval.core.model_client import Message
-from assert_eval.core.otel import (
+from assert_ai.core.async_utils import invoke_callable
+from assert_ai.core.collector import SpanCollector
+from assert_ai.core.model_client import Message
+from assert_ai.core.otel import (
     InMemoryTraceExporter,
     OTelSpan,
     TraceExporter,
@@ -37,7 +37,7 @@ from assert_eval.core.otel import (
     compress_trace_for_judge,
     validate_spans,
 )
-from assert_eval.core.session import TurnResult
+from assert_ai.core.session import TurnResult
 
 
 class OTelTracedSession:
@@ -90,7 +90,7 @@ class OTelTracedSession:
         self._live_otel = live_otel
 
         if live_otel:
-            from assert_eval.core.otel import LiveOTelExporter
+            from assert_ai.core.otel import LiveOTelExporter
             self._live_exporter = LiveOTelExporter()
             self._exporter = self._live_exporter
         else:
@@ -113,7 +113,7 @@ class OTelTracedSession:
         import io
         import sys
 
-        from assert_eval.core.security import validate_callable_ref
+        from assert_ai.core.security import validate_callable_ref
 
         validate_callable_ref(self._callable_ref)
         module_path, func_name = self._callable_ref.rsplit(":", 1)
@@ -165,7 +165,7 @@ class OTelTracedSession:
         sync threading lock across the inner ``await`` would block the loop
         and deadlock when ``inference.concurrency > 1``.
         """
-        from assert_eval.core.otel import LiveOTelExporter
+        from assert_ai.core.otel import LiveOTelExporter
         lock_ctx = LiveOTelExporter.get_lock() if self._live_otel else nullcontext()
         async with lock_ctx:
             # Clear spans from previous turn so we only capture this turn's execution

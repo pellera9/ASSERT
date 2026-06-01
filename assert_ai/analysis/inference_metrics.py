@@ -13,7 +13,7 @@ from __future__ import annotations
 import statistics
 from collections import Counter, defaultdict
 from typing import Any
-from assert_eval.core.io import row_behavior
+from assert_ai.core.io import row_behavior
 
 
 def count_inference_turns(inference_row: dict[str, Any]) -> int:

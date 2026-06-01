@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from assert_eval.core.async_utils import invoke_callable
-from assert_eval.core.model_client import (
+from assert_ai.core.async_utils import invoke_callable
+from assert_ai.core.model_client import (
     GenerateOptions,
     Message,
     ModelResponse,
@@ -28,8 +28,8 @@ from assert_eval.core.model_client import (
     normalize_response,
     summarize_response,
 )
-from assert_eval.core.tool_backend import load_tool_module
-from assert_eval.core.tools import build_target_tools
+from assert_ai.core.tool_backend import load_tool_module
+from assert_ai.core.tools import build_target_tools
 
 log = logging.getLogger(__name__)
 
@@ -491,7 +491,7 @@ class CallableSession:
         return "callable"
 
     async def open(self) -> None:
-        from assert_eval.core.security import validate_callable_ref
+        from assert_ai.core.security import validate_callable_ref
 
         validate_callable_ref(self._callable_ref)
         module_path, func_name = self._callable_ref.rsplit(":", 1)
@@ -656,7 +656,7 @@ class HTTPEndpointSession:
         system_prompt: str | None = None,
         message_timeout_s: float | None = None,
     ) -> None:
-        from assert_eval.core.security import validate_endpoint_url
+        from assert_ai.core.security import validate_endpoint_url
 
         validate_endpoint_url(endpoint)
         self._endpoint = endpoint
@@ -747,7 +747,7 @@ class ExternalSession:
         message_timeout_s: float | None = None,
         config_path: Path | None = None,
     ) -> None:
-        from assert_eval.core.security import validate_module_ref
+        from assert_ai.core.security import validate_module_ref
 
         validate_module_ref(connector_ref, config_path=config_path)
         connector_cls = _discover_connector_class(load_tool_module(connector_ref, config_path=config_path))

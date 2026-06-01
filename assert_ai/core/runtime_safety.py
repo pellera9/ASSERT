@@ -16,7 +16,7 @@ The three layers exposed here:
 
 * :class:`ManifestHeartbeat` — daemon thread that rewrites
   ``manifest.heartbeat_at`` (and an optional progress payload) every
-  ``interval_s`` seconds so external observers (``assert-eval results status``,
+  ``interval_s`` seconds so external observers (``assert-ai results status``,
   benchmark dashboards) get an honest liveness signal during long stages.
 * :class:`PipelineWatchdog` — daemon thread that dumps every Python thread's
   current stack to the log if the pipeline goes silent (no
@@ -142,7 +142,7 @@ class ManifestHeartbeat:
         self._stop.clear()
         self._thread = threading.Thread(
             target=self._loop,
-            name="assert-eval-heartbeat",
+            name="assert-ai-heartbeat",
             daemon=True,
         )
         self._thread.start()
@@ -224,7 +224,7 @@ class PipelineWatchdog:
         self._stop.clear()
         self._thread = threading.Thread(
             target=self._loop,
-            name="assert-eval-watchdog",
+            name="assert-ai-watchdog",
             daemon=True,
         )
         self._thread.start()
@@ -416,7 +416,7 @@ def run_stage_coro(
 
     executor = _AbandonableThreadPoolExecutor(
         max_workers=max_workers,
-        thread_name_prefix="assert-eval-stage-worker",
+        thread_name_prefix="assert-ai-stage-worker",
     )
     loop.set_default_executor(executor)
     asyncio.set_event_loop(loop)
@@ -480,7 +480,7 @@ def _bounded_loop_teardown(
 
     teardown_thread = threading.Thread(
         target=_teardown,
-        name="assert-eval-stage-teardown",
+        name="assert-ai-stage-teardown",
         daemon=True,
     )
     teardown_thread.start()

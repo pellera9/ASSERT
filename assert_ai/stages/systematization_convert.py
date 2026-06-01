@@ -13,15 +13,15 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-from assert_eval.core.config_model import (
+from assert_ai.core.config_model import (
     DEFAULT_SYSTEMATIZATION_CONVERT_MAX_TOKENS,
     DEFAULT_SYSTEMATIZATION_CONVERT_TEMPERATURE,
     DEFAULT_SYSTEMATIZATION_MODEL,
     ModelConfig,
 )
-from assert_eval.core.io import load_prompt_text
-from assert_eval.core.model_client import GenerateOptions, generate_structured, is_truncated_response
-from assert_eval.stages.systematize import taxonomy_schema
+from assert_ai.core.io import load_prompt_text
+from assert_ai.core.model_client import GenerateOptions, generate_structured, is_truncated_response
+from assert_ai.stages.systematize import taxonomy_schema
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 GUIDELINE_PROMPT = load_prompt_text("systematization_convert_single.md")

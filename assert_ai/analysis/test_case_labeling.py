@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from assert_eval.core.async_utils import gather_limited
-from assert_eval.core.model_client import GenerateOptions, generate_structured
-from assert_eval.core.io import fill_template
-from assert_eval.stages.stratification import render_stratification_catalog
+from assert_ai.core.async_utils import gather_limited
+from assert_ai.core.model_client import GenerateOptions, generate_structured
+from assert_ai.core.io import fill_template
+from assert_ai.stages.stratification import render_stratification_catalog
 
 # ---------------------------------------------------------------------------
 # Constants

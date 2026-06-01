@@ -15,17 +15,17 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-from assert_eval.config import resolve_stage_paths
-from assert_eval.core.io import SCORES_FILE, INFERENCE_SET_FILE, row_factors
-from assert_eval.core.io import append_jsonl_row, load_jsonl, load_prompt_text, resolve_path
-from assert_eval.core.judge import (
+from assert_ai.config import resolve_stage_paths
+from assert_ai.core.io import SCORES_FILE, INFERENCE_SET_FILE, row_factors
+from assert_ai.core.io import append_jsonl_row, load_jsonl, load_prompt_text, resolve_path
+from assert_ai.core.judge import (
     build_judge_contract,
     infer_judge_status,
     run_transcript_judge as run_llm_judge,
 )
-from assert_eval.core.model_client import LLMAuthError, LLMContentFilterError, LLMInputError, LLMRateLimitError, LLMProviderError
-from assert_eval.core.transcript import Transcript, TranscriptEvent, TranscriptMetadata
-from assert_eval.viewer_read_model import build_run_viewer_artifacts
+from assert_ai.core.model_client import LLMAuthError, LLMContentFilterError, LLMInputError, LLMRateLimitError, LLMProviderError
+from assert_ai.core.transcript import Transcript, TranscriptEvent, TranscriptMetadata
+from assert_ai.viewer_read_model import build_run_viewer_artifacts
 
 SCOPE = "run"
 SUITE_OUTPUT = None

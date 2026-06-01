@@ -16,14 +16,14 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-from assert_eval.config import parse_model_config, reject_unknown_keys, resolve_stage_paths
-from assert_eval.core.async_utils import gather_limited
-from assert_eval.core.config_model import (
+from assert_ai.config import parse_model_config, reject_unknown_keys, resolve_stage_paths
+from assert_ai.core.async_utils import gather_limited
+from assert_ai.core.config_model import (
     DEFAULT_GENERATION_MAX_TOKENS,
     DEFAULT_GENERATION_TEMPERATURE,
     TargetConfig,
 )
-from assert_eval.core.io import (
+from assert_ai.core.io import (
     row_behavior,
     stratification_dimensions,
     fill_template,
@@ -35,7 +35,7 @@ from assert_eval.core.io import (
     slugify,
     write_jsonl,
 )
-from assert_eval.core.model_client import (
+from assert_ai.core.model_client import (
     GenerateOptions,
     LLMAuthError,
     LLMInputError,
@@ -43,8 +43,8 @@ from assert_eval.core.model_client import (
     LLMRateLimitError,
     generate_structured,
 )
-from assert_eval.core.tools import normalize_tool_defs
-from assert_eval.stages.stratification import DEFAULT_LEVEL_COUNT, normalize_stratification, run_stratification
+from assert_ai.core.tools import normalize_tool_defs
+from assert_ai.stages.stratification import DEFAULT_LEVEL_COUNT, normalize_stratification, run_stratification
 
 PROMPT_TEST_CASE_TEMPLATE = load_prompt_text("test_set_direct_single.md")
 SCENARIO_TEST_CASE_TEMPLATE = load_prompt_text("test_set_scenario_single.md")

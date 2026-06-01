@@ -1,6 +1,6 @@
 """Validation bridge — check a proposed YAML against config rules.
 
-Uses the same structural checks as ``assert_eval.config`` without requiring
+Uses the same structural checks as ``assert_ai.config`` without requiring
 stage modules or filesystem context so the design agent can validate
 proposals mid-conversation.
 """
@@ -35,7 +35,7 @@ def validate_raw_config(data: dict[str, Any]) -> tuple[bool, list[str]]:
     shape, and pipeline stage names. Does **not** resolve file paths or
     load stage modules — those are runtime concerns.
     """
-    from assert_eval.config import (
+    from assert_ai.config import (
         ConfigError,
         _SAFE_ID_RE,
         PIPELINE_STAGE_ORDER,

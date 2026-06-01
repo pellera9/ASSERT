@@ -7,7 +7,7 @@ Supports traces exported from Phoenix, Jaeger, or any OpenTelemetry collector.
 Follows OpenInference semantic conventions for LLM/agent span attributes.
 
 Usage:
-    from assert_eval.core.otel import parse_otel_traces
+    from assert_ai.core.otel import parse_otel_traces
 
     inference_rows = parse_otel_traces(
         "traces.json",

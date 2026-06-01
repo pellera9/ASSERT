@@ -12,8 +12,8 @@ from typing import Any
 
 import yaml
 
-from assert_eval.core.io import load_prompt_text
-from assert_eval.library.loader import discover, load_preset
+from assert_ai.core.io import load_prompt_text
+from assert_ai.library.loader import discover, load_preset
 
 log = logging.getLogger(__name__)
 

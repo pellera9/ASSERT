@@ -1,1 +1,1 @@
-"""assert-eval init — conversational eval config designer."""
+"""assert-ai init — conversational eval config designer."""

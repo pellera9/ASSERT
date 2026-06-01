@@ -10,7 +10,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from assert_eval.core.io import load_jsonl, row_behavior
+from assert_ai.core.io import load_jsonl, row_behavior
 
 try:
     import numpy as np

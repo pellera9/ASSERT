@@ -15,16 +15,16 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from assert_eval.core.io import load_jsonl, row_behavior
+from assert_ai.core.io import load_jsonl, row_behavior
 
-from assert_eval.analysis.stability import (
+from assert_ai.analysis.stability import (
     compute_tester_variation,
     compute_repeatability,
     format_tester_variation,
     format_repeatability,
 )
-from assert_eval.analysis.inference_metrics import compute_inference_metrics
-from assert_eval.analysis.stats import binary_rate_ci, macro_rate
+from assert_ai.analysis.inference_metrics import compute_inference_metrics
+from assert_ai.analysis.stats import binary_rate_ci, macro_rate
 
 
 MIN_BEHAVIOR_SUPPORT = 5  # suppress per-behavior rates below this

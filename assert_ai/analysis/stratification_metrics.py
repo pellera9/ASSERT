@@ -15,7 +15,7 @@ from collections import Counter
 from itertools import combinations
 from typing import Any
 
-from assert_eval.core.io import stratification_dimensions, row_behavior
+from assert_ai.core.io import stratification_dimensions, row_behavior
 
 # ---------------------------------------------------------------------------
 # Stratification quality

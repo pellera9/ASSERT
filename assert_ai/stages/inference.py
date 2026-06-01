@@ -21,8 +21,8 @@ log = logging.getLogger(__name__)
 
 import click
 
-from assert_eval.config import resolve_stage_paths
-from assert_eval.core.config_model import (
+from assert_ai.config import resolve_stage_paths
+from assert_ai.core.config_model import (
     DEFAULT_MODEL_TIMEOUT_S,
     DEFAULT_INFERENCE_MAX_TOKENS,
     EvaluationConfig,
@@ -30,7 +30,7 @@ from assert_eval.core.config_model import (
     InferenceConfig,
     TargetConfig,
 )
-from assert_eval.core.io import (
+from assert_ai.core.io import (
     INFERENCE_SET_FILE,
     append_jsonl_row,
     get_permissible_flag,
@@ -42,9 +42,9 @@ from assert_eval.core.io import (
     write_jsonl,
     row_factors,
 )
-from assert_eval.core.model_client import GenerateOptions, Message, ModelResponse, build_llm_call_trace, generate, to_jsonable
-from assert_eval.core.model_client import LLMAuthError, LLMContentFilterError, LLMInputError, LLMRateLimitError, LLMProviderError
-from assert_eval.core.session import (
+from assert_ai.core.model_client import GenerateOptions, Message, ModelResponse, build_llm_call_trace, generate, to_jsonable
+from assert_ai.core.model_client import LLMAuthError, LLMContentFilterError, LLMInputError, LLMRateLimitError, LLMProviderError
+from assert_ai.core.session import (
     CallableSession,
     ExternalSession,
     HTTPEndpointSession,
@@ -53,9 +53,9 @@ from assert_eval.core.session import (
     TurnResult,
     serialize_response,
 )
-from assert_eval.core.tool_backend import ToolBackendResolver, inspect_tool_module
-from assert_eval.core.tools import load_toolset_file, normalize_tool_defs
-from assert_eval.core.transcript import (
+from assert_ai.core.tool_backend import ToolBackendResolver, inspect_tool_module
+from assert_ai.core.tools import load_toolset_file, normalize_tool_defs
+from assert_ai.core.transcript import (
     AddMessageEdit,
     Message as TranscriptMessage,
     SetSystemMessageEdit,
@@ -64,8 +64,8 @@ from assert_eval.core.transcript import (
     TranscriptEvent,
     TranscriptMetadata,
 )
-from assert_eval.stages.test_set import TOOL_SOURCE_PER_TEST_CASE, TOOL_SOURCE_RUNTIME
-from assert_eval.viewer_read_model import build_run_viewer_artifacts
+from assert_ai.stages.test_set import TOOL_SOURCE_PER_TEST_CASE, TOOL_SOURCE_RUNTIME
+from assert_ai.viewer_read_model import build_run_viewer_artifacts
 
 SCOPE = "run"
 SUITE_OUTPUT = None
@@ -540,7 +540,7 @@ def _build_target_session(
         if not target.callable:
             raise ValueError("callable target requires a callable reference")
         if target.trace:
-            from assert_eval.core.otel_session import OTelTracedSession
+            from assert_ai.core.otel_session import OTelTracedSession
 
             return OTelTracedSession(
                 callable_ref=target.callable,

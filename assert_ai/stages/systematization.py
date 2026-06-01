@@ -14,9 +14,9 @@ log = logging.getLogger(__name__)
 
 from pydantic import BaseModel, ConfigDict
 
-from assert_eval.core.config_model import ModelConfig
-from assert_eval.core.io import load_prompt_text
-from assert_eval.core.model_client import GenerateOptions, generate_structured, is_truncated_response
+from assert_ai.core.config_model import ModelConfig
+from assert_ai.core.io import load_prompt_text
+from assert_ai.core.model_client import GenerateOptions, generate_structured, is_truncated_response
 
 SYSTEMATIZATION_PROMPT = load_prompt_text("systematization_single.md")
 ALLOWED_MODES = {"research", "direct"}

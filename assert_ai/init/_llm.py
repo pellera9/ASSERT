@@ -27,7 +27,7 @@ def chat_completion(
     """
     import litellm
 
-    from assert_eval.core.model_client import (
+    from assert_ai.core.model_client import (
         _ResponsesApiNotAvailableError,
         _activate_chat_completions_fallback,
         _classify_llm_error,
