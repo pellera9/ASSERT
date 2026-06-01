@@ -356,7 +356,7 @@ export default function Home() {
 							</div>
 							<div className="run-eval-terminal">
 								<Terminal title="Terminal">
-									<TypingAnimation>assert_ai run --config eval_config.yaml</TypingAnimation>
+									<TypingAnimation>assert-ai run --config eval_config.yaml</TypingAnimation>
 									<AnimatedSpan className="terminal-line--ok">
 										<span className="terminal-check">✓</span> Generated 12 behavior categories
 									</AnimatedSpan>
