@@ -21,7 +21,7 @@
         </a>
 </p>
 <p align="center">
-        <img src="assets/assert-eval-framework-diagram.png" alt="Diagram of the ASSERT evaluation framework" width="100%">
+        <img src="assets/assert-ai-framework-diagram.png" alt="Diagram of the ASSERT evaluation framework" width="100%">
 </p>
 
 ## Why ASSERT?

@@ -12,7 +12,7 @@ Architecture:
                                    → safety_advisor → itinerary_optimizer
 
 Each "agent" is a plain Python function wrapped in a manual OTel span.
-The spans follow OpenInference semantic conventions so assert_eval/core/otel.py
+The spans follow OpenInference semantic conventions so assert_ai/core/otel.py
 can parse them into transcript events for the judge.
 """
 

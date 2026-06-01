@@ -9,7 +9,7 @@ Run the bundled example like this:
 ```bash
 cp .env.example .env
 source .env
-assert-eval run --config examples/prompt_agents/health_assistant_external.yaml
+assert-ai run --config examples/prompt_agents/health_assistant_external.yaml
 ```
 
 If you want to validate the Docker assets without running the full pipeline, build the image directly:
