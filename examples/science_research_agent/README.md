@@ -50,7 +50,7 @@ pip install -e ".[otel,examples]"
 cp examples/science_research_agent/.env.example examples/science_research_agent/.env
 # Edit the .env: AZURE_API_KEY, AZURE_API_BASE, and TAVILY_API_KEY are required.
 
-assert-eval run --config examples/science_research_agent/eval_config.yaml
+assert-ai run --config examples/science_research_agent/eval_config.yaml
 ```
 
 Required env vars (in `examples/science_research_agent/.env`):

@@ -7,7 +7,7 @@ Use this flow when a run fails or scores look wrong.
 Check status first:
 
 ```bash
-assert-eval results status <suite> <run>
+assert-ai results status <suite> <run>
 ```
 
 Inspect `manifest.json` to confirm the failing stage.
@@ -35,7 +35,7 @@ Then inspect matching rows in `inference_set.jsonl`.
 If you changed inputs for a stage, force rerun from that stage:
 
 ```bash
-assert-eval run --config <config-path> --force-stage <stage-name>
+assert-ai run --config <config-path> --force-stage <stage-name>
 ```
 
 Common examples:
@@ -58,8 +58,8 @@ Common examples:
 Compare runs to spot regressions:
 
 ```bash
-assert-eval results compare <suite> <run-a> <run-b>
-assert-eval results compare-suites <suite-a>/<run-a> <suite-b>/<run-b>
+assert-ai results compare <suite> <run-a> <run-b>
+assert-ai results compare-suites <suite-a>/<run-a> <suite-b>/<run-b>
 ```
 
 ## 7) Environment-specific fixes

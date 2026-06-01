@@ -4,16 +4,16 @@ Run scripts in this directory with `python ...` from the repo root so they see t
 
 ## Seed sampling
 
-Test-set stratification and generation run through `assert-eval run` now. Start from
+Test-set stratification and generation run through `assert-ai run` now. Start from
 `examples/pipes/health_assistant.yaml`, keep `pipeline.test_set.stratify` and
 `pipeline.test_set`, then run:
 
 ```bash
 source .env
-assert-eval run --config examples/pipes/health_assistant.yaml
+assert-ai run --config examples/pipes/health_assistant.yaml
 ```
 
-Use `assert-eval --help` for CLI options.
+Use `assert-ai --help` for CLI options.
 
 ## `benchmark.py`
 

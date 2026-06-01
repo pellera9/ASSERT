@@ -17,19 +17,19 @@ Copy-Item .env.example .env
 # Edit .env with credentials for your provider. The shipped configs use `azure/...` models;
 # any LiteLLM provider (OpenAI, Anthropic, Bedrock, Vertex, Ollama, …) works — see https://docs.litellm.ai/docs/providers.
 
-assert-eval run --config examples/travel_planner_langgraph/eval_config.yaml
-assert-eval results status travel-planner-langgraph-v1 demo-1
+assert-ai run --config examples/travel_planner_langgraph/eval_config.yaml
+assert-ai results status travel-planner-langgraph-v1 demo-1
 ```
 
 ## Create your own config
 
-Use `assert-eval init` to design an eval config interactively instead of writing YAML by hand.
+Use `assert-ai init` to design an eval config interactively instead of writing YAML by hand.
 Pass `--model` with any [LiteLLM model string](https://docs.litellm.ai/docs/providers) and make sure the matching API key is in your `.env`:
 
 ```powershell
-assert-eval init --model azure/gpt-5.4-mini
+assert-ai init --model azure/gpt-5.4-mini
 # or seed from an existing example:
-assert-eval init --model azure/gpt-5.4-mini --from examples/travel_planner_langgraph/eval_config.yaml
+assert-ai init --model azure/gpt-5.4-mini --from examples/travel_planner_langgraph/eval_config.yaml
 ```
 
 See the [CLI reference](../docs/reference/cli.md#design-a-config-interactively) for all options.
@@ -44,7 +44,7 @@ See the [CLI reference](../docs/reference/cli.md#design-a-config-interactively) 
 | Run a simple hosted-model eval | `pipes/health_assistant.yaml` | Good smoke test for a single LLM target with a system prompt. |
 | Evaluate a Prompt Agent with planned tools but no backend | `pipes/health_assistant_simulated_tools.yaml` | Uses a fixed tool schema and simulated tool responses. |
 | Evaluate a hosted target with Python tool functions | `pipes/health_assistant_sandbox.yaml` | Requires Docker. Use when you want actual tool execution around a hosted model. |
-| Evaluate a science research agent with real retrieval tools | `science_research_agent/eval_config.yaml` | Callable-agent example ported from Omni. Uses `web_search`, `fetch_url`, and `file_search`. Run `python -m pip install -e ".[examples]"`, set `TAVILY_API_KEY` for web search, then `assert-eval run --config examples/science_research_agent/eval_config.yaml`. |
+| Evaluate a science research agent with real retrieval tools | `science_research_agent/eval_config.yaml` | Callable-agent example ported from Omni. Uses `web_search`, `fetch_url`, and `file_search`. Run `python -m pip install -e ".[examples]"`, set `TAVILY_API_KEY` for web search, then `assert-ai run --config examples/science_research_agent/eval_config.yaml`. |
 
 ## Layout
 

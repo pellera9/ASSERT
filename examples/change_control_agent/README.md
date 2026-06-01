@@ -76,7 +76,7 @@ pip install -e ".[otel]"
 cp examples/change_control_agent/.env.example examples/change_control_agent/.env
 # Edit the .env: AZURE_API_KEY and AZURE_API_BASE are required.
 
-assert-eval run --config examples/change_control_agent/eval_config.yaml
+assert-ai run --config examples/change_control_agent/eval_config.yaml
 ```
 
 Required env vars (in `examples/change_control_agent/.env`):

@@ -9,7 +9,7 @@ Architecture:
                                    → safety_advisor → itinerary_optimizer
 
 Usage:
-    assert-eval run --config examples/travel_planner_langgraph/eval_config.yaml
+    assert-ai run --config examples/travel_planner_langgraph/eval_config.yaml
 """
 
 from __future__ import annotations
