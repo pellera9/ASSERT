@@ -18,12 +18,12 @@ from click.shell_completion import CompletionItem
 from rich.console import Console
 from rich.table import Table
 
-from assert_eval.core.config_model import DEFAULT_INFERENCE_CONCURRENCY
-from assert_eval.core.io import load_json, load_jsonl, get_permissible_flag, row_behavior
-from assert_eval.core.judge import get_verdict_dimension, infer_judge_status, is_valid_event_flag
-from assert_eval.display import label_metric, label_run_status, label_stage, label_stage_status, label_status
-from assert_eval.logging_config import configure_logging
-from assert_eval.stages import STAGE_NAMES
+from assert_ai.core.config_model import DEFAULT_INFERENCE_CONCURRENCY
+from assert_ai.core.io import load_json, load_jsonl, get_permissible_flag, row_behavior
+from assert_ai.core.judge import get_verdict_dimension, infer_judge_status, is_valid_event_flag
+from assert_ai.display import label_metric, label_run_status, label_stage, label_stage_status, label_status
+from assert_ai.logging_config import configure_logging
+from assert_ai.stages import STAGE_NAMES
 
 ROOT = Path(__file__).resolve().parent.parent
 JUDGE_DIMENSIONS_PATH = ROOT / "examples" / "eval-definitions" / "judge_dimensions.yaml"
@@ -58,7 +58,7 @@ class SuggestingGroup(click.Group):
 def _load_runner_module():
     global _RUNNER_MODULE
     if _RUNNER_MODULE is None:
-        from assert_eval import runner
+        from assert_ai import runner
 
         _RUNNER_MODULE = runner
     return _RUNNER_MODULE
@@ -67,7 +67,7 @@ def _load_runner_module():
 def _load_test_set_metrics():
     global _TEST_SET_METRICS_MODULE
     if _TEST_SET_METRICS_MODULE is None:
-        from assert_eval.analysis import test_set_metrics
+        from assert_ai.analysis import test_set_metrics
 
         _TEST_SET_METRICS_MODULE = test_set_metrics
     return _TEST_SET_METRICS_MODULE
@@ -483,14 +483,14 @@ def _behavior_category_metric_map(rows: Iterable[dict[str, Any]], metric: str) -
     epilog=(
         "\b\n"
         "Examples:\n"
-        "  assert-eval run --config examples/pipes/health_assistant.yaml\n"
-        "  assert-eval run --config examples/pipes/health_assistant_external.yaml\n"
-        "  assert-eval results list\n"
-        "  assert-eval results compare health-assistant-v1 gpt54-eval gpt54-eval\n"
-        "  assert-eval results compare-suites suite-a/run-1 suite-b/run-1 suite-c/run-1"
+        "  assert-ai run --config examples/pipes/health_assistant.yaml\n"
+        "  assert-ai run --config examples/pipes/health_assistant_external.yaml\n"
+        "  assert-ai results list\n"
+        "  assert-ai results compare health-assistant-v1 gpt54-eval gpt54-eval\n"
+        "  assert-ai results compare-suites suite-a/run-1 suite-b/run-1 suite-c/run-1"
     ),
 )
-@click.version_option(version="0.1.0", prog_name="assert-eval")
+@click.version_option(version="0.1.0", prog_name="assert-ai")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug-level logging.")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress info-level output; show only warnings and errors.")
 @click.option(
@@ -521,7 +521,7 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool, log_file: Path | None, o
 
 
 # -- init (design an eval config with an LLM assistant) ---------------------
-from assert_eval.init._command import init  # noqa: E402
+from assert_ai.init._command import init  # noqa: E402
 
 cli.add_command(init)
 
@@ -589,7 +589,7 @@ def run(
 ):
     """Run the evaluation pipeline."""
     # Re-configure logging if flags were passed on the subcommand
-    # (e.g. `assert-eval run --verbose` instead of `assert-eval --verbose run`).
+    # (e.g. `assert-ai run --verbose` instead of `assert-ai --verbose run`).
     if verbose or quiet or log_file or output_format != "text":
         configure_logging(
             verbose=verbose,
@@ -893,14 +893,14 @@ def results_compare(
     """Compare runs. Accepts two forms:
 
     \b
-    Within one suite:  assert-eval results compare SUITE RUN1 RUN2
-    Cross-suite:       assert-eval results compare SUITE/RUN1 SUITE/RUN2
+    Within one suite:  assert-ai results compare SUITE RUN1 RUN2
+    Cross-suite:       assert-ai results compare SUITE/RUN1 SUITE/RUN2
     """
     if len(args) < 2:
         _error(
             "Provide at least two arguments.\n"
-            "  Within suite:  assert-eval results compare SUITE RUN1 RUN2\n"
-            "  Cross-suite:   assert-eval results compare SUITE/RUN1 SUITE/RUN2"
+            "  Within suite:  assert-ai results compare SUITE RUN1 RUN2\n"
+            "  Cross-suite:   assert-ai results compare SUITE/RUN1 SUITE/RUN2"
         )
 
     # Detect cross-suite mode: any arg contains "/"
@@ -925,7 +925,7 @@ def results_compare(
             _error(
                 f"'{runs[0]}' looks like a suite name, not a run ID.\n"
                 f"Use slash format for cross-suite:\n"
-                f"  assert-eval results compare {suite}/run-1 {runs[0]}/run-1"
+                f"  assert-ai results compare {suite}/run-1 {runs[0]}/run-1"
             )
         _error("Provide at least two run IDs to compare.")
 
@@ -1108,7 +1108,7 @@ def results_compare_suites(
 
     \b
     Examples:
-      assert-eval results compare-suites \\
+      assert-ai results compare-suites \\
         travel-planner-phoenix-otel-demo/run-1 \\
         travel-planner-litellm-callable/run-1 \\
         travel-planner-external-connector/run-1
@@ -1313,7 +1313,7 @@ def analysis_test_set_metrics(
 @click.option("--output", default=None, type=click.Path(path_type=Path), help="Output directory for scores")
 def judge_traces(traces: Path, config_path: Path, group_by: str, output: Path | None):
     """Judge pre-collected OTel traces without running inference."""
-    from assert_eval.core.otel import parse_otel_traces
+    from assert_ai.core.otel import parse_otel_traces
 
     click.echo(f"Parsing OTel traces from {traces}...")
     inference_rows = parse_otel_traces(traces, group_by=group_by)
@@ -1360,7 +1360,7 @@ def library():
 @click.option("--no-color", is_flag=True, help="Disable colored output.")
 def library_list(kind: str | None, as_json: bool, no_color: bool):
     """List all available presets in the library."""
-    from assert_eval.library.loader import discover
+    from assert_ai.library.loader import discover
 
     results = discover(kind)
     if as_json:
@@ -1394,7 +1394,7 @@ def library_list(kind: str | None, as_json: bool, no_color: bool):
 @click.option("--json", "as_json", is_flag=True, help="Emit raw YAML content as JSON.")
 def library_show(name: str, kind: str | None, as_json: bool):
     """Show the full content of a preset by name."""
-    from assert_eval.library.loader import VALID_KINDS, load_preset
+    from assert_ai.library.loader import VALID_KINDS, load_preset
 
     # Auto-detect kind if not specified
     if kind is None:

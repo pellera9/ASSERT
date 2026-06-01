@@ -15,7 +15,7 @@ import yaml
 
 log = logging.getLogger(__name__)
 
-from assert_eval.core.config_model import (
+from assert_ai.core.config_model import (
     DEFAULT_TESTER_MAX_TURNS,
     DEFAULT_JUDGE_MAX_TOKENS,
     DEFAULT_JUDGE_TEMPERATURE,
@@ -258,7 +258,7 @@ def load_runtime_context(
         )
         preset_name = _optional_str(behavior_raw.get("preset"), field_name="behavior.preset")
         if preset_name:
-            from assert_eval.library.loader import load_preset
+            from assert_ai.library.loader import load_preset
             preset = load_preset("behavior", preset_name)
             if not behavior_raw.get("name"):
                 behavior_raw = {**behavior_raw, "name": preset["name"]}
@@ -764,7 +764,7 @@ def parse_pipeline_config(raw: dict[str, Any]) -> PipelineConfig | None:
             )
             preset_dims: list[dict[str, Any]] = []
             if judge_preset_names:
-                from assert_eval.library.loader import load_preset
+                from assert_ai.library.loader import load_preset
                 # Later presets override earlier ones on dimension-name conflict.
                 merged: dict[str, dict[str, Any]] = {}
                 for preset_name in judge_preset_names:

@@ -38,7 +38,7 @@ RUN_STATUS_LABELS: dict[str, str] = {
 }
 
 
-# Maps runner stage names (``assert_eval/stages/__init__.py``) to the human
+# Maps runner stage names (``assert_ai/stages/__init__.py``) to the human
 # label the viewer's run monitor uses. ``systematize`` and ``taxonomy`` resolve
 # to the same label because the viewer historically used the artifact name.
 # Keep the sub-stage entries (``systematization``,

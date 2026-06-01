@@ -20,13 +20,13 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
-from assert_eval.config import (
+from assert_ai.config import (
     ConfigError,
     PIPELINE_STAGE_ORDER,
     load_config,
     load_runtime_context,
 )
-from assert_eval.core.artifact_cache import (
+from assert_ai.core.artifact_cache import (
     activate_latest_artifacts,
     activate_artifact_plan,
     discard_artifact_plan,
@@ -38,9 +38,9 @@ from assert_eval.core.artifact_cache import (
     supports_artifact_cache,
     update_latest,
 )
-from assert_eval.core.config_model import RunManifest, SuiteMetadata
-from assert_eval.core.io import write_json
-from assert_eval.core.model_client import (
+from assert_ai.core.config_model import RunManifest, SuiteMetadata
+from assert_ai.core.io import write_json
+from assert_ai.core.model_client import (
     LLMAuthError,
     LLMInputError,
     LLMProviderError,
@@ -48,13 +48,13 @@ from assert_eval.core.model_client import (
     UsageAccumulator,
     track_usage,
 )
-from assert_eval.core.runtime_safety import (
+from assert_ai.core.runtime_safety import (
     ManifestHeartbeat,
     PipelineWatchdog,
     run_stage_coro,
 )
-from assert_eval.display import label_metric
-from assert_eval.stages import STAGES
+from assert_ai.display import label_metric
+from assert_ai.stages import STAGES
 
 load_dotenv()
 
@@ -508,11 +508,11 @@ def _log_run_headline(run_root: Path) -> None:
     """
     # Imported lazily to avoid a hard dependency for callers that import the
     # runner without ever invoking it (e.g. test scaffolding).
-    from assert_eval.results import (
+    from assert_ai.results import (
         compute_prompt_metrics,
         compute_scenario_metrics,
     )
-    from assert_eval.core.io import load_jsonl
+    from assert_ai.core.io import load_jsonl
 
     scores_path = run_root / "scores.jsonl"
     if not scores_path.exists():
@@ -959,7 +959,7 @@ def _run_stages_inner(
             run_id = ctx.get('run_id', '')
             if suite_id and run_id:
                 log.info("Inspect results:")
-                log.info(f"  assert-eval results status {suite_id} {run_id}")
+                log.info(f"  assert-ai results status {suite_id} {run_id}")
                 log.info("View in browser:")
                 log.info(f"  cd viewer && npm run dev    (then open http://localhost:5174/suite/{suite_id}/{run_id})")
     else:

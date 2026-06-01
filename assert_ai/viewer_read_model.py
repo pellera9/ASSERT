@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from assert_eval.core.io import write_json, row_behavior
+from assert_ai.core.io import write_json, row_behavior
 
 log = logging.getLogger(__name__)
 
