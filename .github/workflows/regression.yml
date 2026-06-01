@@ -14,7 +14,7 @@ name: Regression Test
 on:
   pull_request:
     paths:
-      - 'assert_eval/**'
+      - 'assert_ai/**'
       - 'prompts/**'
       - 'scripts/regression_*.py'
       - 'tests/regression/**'
