@@ -55,7 +55,8 @@ Common examples:
 - Non-instrumented target when trace-level evidence is expected
 - Overly vague judge dimensions and rubrics causing weak verdict evidence
 - Stale artifacts reused without forcing the correct stage
-## 6. Helpful comparisons
+## 6. Helpful comparisons
+
 ## 6.  Helpful comparisons
 
 Compare runs to spot regressions:

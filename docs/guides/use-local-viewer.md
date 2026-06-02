@@ -10,6 +10,7 @@ Though portable local artifacts can be a powerful feature, ASSERT comes with a l
 - dimension breakdowns
 - inference preview while runs are in progress
 - live run monitor from `manifest.json`
+ 
 
 ## Screenshot walkthrough
 
